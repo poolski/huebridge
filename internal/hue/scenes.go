@@ -95,6 +95,43 @@ func toSceneLightStates(lightStates map[string]backend.DesiredState) map[string]
 	return out
 }
 
+func toScene(s StoredScene) Scene {
+	return Scene{
+		Name:        s.Name,
+		Type:        "GroupScene",
+		Group:       s.Group,
+		Lights:      s.Lights,
+		LightStates: toSceneLightStates(s.LightStates),
+		Owner:       "huebridge",
+		Recycle:     false,
+		Locked:      false,
+	}
+}
+
+func handleGetScenes(scenes *SceneStore) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		out := map[string]Scene{}
+		for _, s := range scenes.All() {
+			out[s.ID] = toScene(s)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(out)
+	}
+}
+
+func handleGetScene(scenes *SceneStore) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id := r.PathValue("id")
+		s, ok := scenes.Get(id)
+		if !ok {
+			WriteError(w, http.StatusOK, 3, r.URL.Path, "resource, "+r.URL.Path+", not available")
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(toScene(s))
+	}
+}
+
 func handlePostScene(reg *registry.Registry, be backend.Backend, scenes *SceneStore) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req struct {

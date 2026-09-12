@@ -24,6 +24,8 @@ func NewServer(reg *registry.Registry, be backend.Backend, wl *Whitelist, win *P
 		mux.HandleFunc("PUT /api/{username}/groups/{id}/action", handlePutGroupAction(reg, be))
 
 		scenes := NewSceneStore(scenesPath)
+		mux.HandleFunc("GET /api/{username}/scenes", handleGetScenes(scenes))
+		mux.HandleFunc("GET /api/{username}/scenes/{id}", handleGetScene(scenes))
 		mux.HandleFunc("POST /api/{username}/scenes", handlePostScene(reg, be, scenes))
 		mux.HandleFunc("DELETE /api/{username}/scenes/{id}", handleDeleteScene(scenes, be))
 	}

@@ -69,3 +69,70 @@ func TestScenes_DeleteRemovesMirroredScene(t *testing.T) {
 		t.Fatal("expected scene to be removed from the store after delete")
 	}
 }
+
+func TestScenes_GetAllReturnsSeededScene(t *testing.T) {
+	be := fake.New()
+	reg, _ := registry.NewRegistry(filepath.Join(t.TempDir(), "registry.json"))
+
+	scenesPath := filepath.Join(t.TempDir(), "scenes.json")
+	scenes := NewSceneStore(scenesPath)
+	scene, _ := scenes.Create("Relax", "1", []string{"light.kitchen"}, map[string]backend.DesiredState{})
+
+	srv := NewServer(reg, be, NewWhitelist(filepath.Join(t.TempDir(), "wl.json")), &PairingWindow{}, "AABBCCFFFEDDEEFF", mustParseMAC("aa:bb:cc:dd:ee:ff"), scenesPath)
+
+	req := httptest.NewRequest("GET", "/api/testuser/scenes", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	var body map[string]Scene
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	got, ok := body[scene.ID]
+	if !ok {
+		t.Fatalf("got %+v, want key %q for the seeded scene", body, scene.ID)
+	}
+	if got.Name != "Relax" || len(got.Lights) != 1 || got.Lights[0] != "light.kitchen" {
+		t.Fatalf("got %+v, want Name=Relax Lights=[light.kitchen]", got)
+	}
+}
+
+func TestScenes_GetOneReturnsScene(t *testing.T) {
+	be := fake.New()
+	reg, _ := registry.NewRegistry(filepath.Join(t.TempDir(), "registry.json"))
+
+	scenesPath := filepath.Join(t.TempDir(), "scenes.json")
+	scenes := NewSceneStore(scenesPath)
+	scene, _ := scenes.Create("Relax", "1", []string{"light.kitchen"}, map[string]backend.DesiredState{})
+
+	srv := NewServer(reg, be, NewWhitelist(filepath.Join(t.TempDir(), "wl.json")), &PairingWindow{}, "AABBCCFFFEDDEEFF", mustParseMAC("aa:bb:cc:dd:ee:ff"), scenesPath)
+
+	req := httptest.NewRequest("GET", "/api/testuser/scenes/"+scene.ID, nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	var got Scene
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.Name != "Relax" || len(got.Lights) != 1 || got.Lights[0] != "light.kitchen" {
+		t.Fatalf("got %+v, want Name=Relax Lights=[light.kitchen]", got)
+	}
+}
+
+func TestScenes_GetOneUnknownIDReturnsError(t *testing.T) {
+	be := fake.New()
+	reg, _ := registry.NewRegistry(filepath.Join(t.TempDir(), "registry.json"))
+
+	srv := NewServer(reg, be, NewWhitelist(filepath.Join(t.TempDir(), "wl.json")), &PairingWindow{}, "AABBCCFFFEDDEEFF", mustParseMAC("aa:bb:cc:dd:ee:ff"), filepath.Join(t.TempDir(), "scenes.json"))
+
+	req := httptest.NewRequest("GET", "/api/testuser/scenes/does-not-exist", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	var body []ErrorItem
+	json.NewDecoder(rec.Body).Decode(&body)
+	if len(body) != 1 || body[0].Error.Type != 3 {
+		t.Fatalf("got %+v, want a single type-3 (resource not available) error", body)
+	}
+}
