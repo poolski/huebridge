@@ -19,6 +19,23 @@ msg_info() { echo -e " ${YW}○${CL} $1"; }
 msg_ok() { echo -e " ${GN}✓${CL} $1"; }
 msg_error() { echo -e " ${RD}✗${CL} $1" >&2; }
 
+msg_info "Configuring console auto-login"
+# Matches the Proxmox VE Community Scripts' own customize() in
+# misc/install.func exactly (container-getty@1.service, "tty%I" as the
+# agetty line argument, not the stock unit's pts-based "-") — verified
+# against their actual source rather than guessed from agetty(8), after
+# an earlier console-getty.service-based attempt didn't work in practice.
+mkdir -p /etc/systemd/system/container-getty@1.service.d
+cat >/etc/systemd/system/container-getty@1.service.d/override.conf <<'UNIT'
+[Service]
+ExecStart=
+ExecStart=-/sbin/agetty --autologin root --noclear --keep-baud tty%I 115200,38400,9600 $TERM
+UNIT
+
+systemctl daemon-reload
+systemctl restart container-getty@1.service
+msg_ok "Configured console auto-login"
+
 msg_info "Installing dependencies"
 apt-get update -qq
 apt-get install -y --no-install-recommends git ca-certificates curl >/dev/null

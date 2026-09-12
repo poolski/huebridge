@@ -151,14 +151,23 @@ done
 msg_ok "Network is up"
 
 msg_info "Installing huebridge inside the container (this builds from source, so it takes a few minutes)"
-INSTALL_SCRIPT_LOCAL="$(dirname "${BASH_SOURCE[0]}")/install.sh"
-if [ -f "$INSTALL_SCRIPT_LOCAL" ]; then
-	pct push "$VMID" "$INSTALL_SCRIPT_LOCAL" /root/install.sh
-	pct exec "$VMID" -- env HUEBRIDGE_REPO="$HUEBRIDGE_REPO" HUEBRIDGE_REF="$HUEBRIDGE_REF" bash /root/install.sh
+# BASH_SOURCE is unset (not just empty) when this script runs via
+# `bash -c "$(curl ...)"`, as the README's one-liner does — there's no
+# script file to speak of, so guard the array access under set -u.
+INSTALL_SCRIPT_LOCAL=""
+if [ -n "${BASH_SOURCE[0]:-}" ]; then
+	INSTALL_SCRIPT_LOCAL="$(dirname "${BASH_SOURCE[0]}")/install.sh"
+fi
+# Pipe install.sh's content into the container over stdin rather than
+# having the guest fetch it itself — a fresh Debian LXC template doesn't
+# ship curl/wget, so a guest-side "curl | bash" can't even fetch the
+# script that would go on to install curl. The host fetches it instead.
+if [ -n "$INSTALL_SCRIPT_LOCAL" ] && [ -f "$INSTALL_SCRIPT_LOCAL" ]; then
+	pct exec "$VMID" -- env HUEBRIDGE_REPO="$HUEBRIDGE_REPO" HUEBRIDGE_REF="$HUEBRIDGE_REF" bash -s <"$INSTALL_SCRIPT_LOCAL"
 else
 	RAW_BASE="$(echo "$HUEBRIDGE_REPO" | sed -E 's#github\.com#raw.githubusercontent.com#; s#\.git$##')"
 	INSTALL_URL="${RAW_BASE}/${HUEBRIDGE_REF}/scripts/proxmox/install.sh"
-	pct exec "$VMID" -- env HUEBRIDGE_REPO="$HUEBRIDGE_REPO" HUEBRIDGE_REF="$HUEBRIDGE_REF" bash -c "curl -fsSL '$INSTALL_URL' | bash"
+	curl -fsSL "$INSTALL_URL" | pct exec "$VMID" -- env HUEBRIDGE_REPO="$HUEBRIDGE_REPO" HUEBRIDGE_REF="$HUEBRIDGE_REF" bash -s
 fi
 msg_ok "Installed huebridge"
 
