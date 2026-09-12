@@ -1,8 +1,10 @@
 package hue
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -27,6 +29,7 @@ type StoredSchedule struct {
 }
 
 type scheduleFile struct {
+	NextID    int                       `json:"next_id"`
 	Schedules map[string]StoredSchedule `json:"schedules"`
 }
 
@@ -38,10 +41,32 @@ type ScheduleStore struct {
 
 func NewScheduleStore(path string) *ScheduleStore {
 	file := store.NewJSONFile[scheduleFile](path)
-	state, _ := file.Load(scheduleFile{Schedules: map[string]StoredSchedule{}})
+	state, _ := file.Load(scheduleFile{NextID: 1, Schedules: map[string]StoredSchedule{}})
 	if state.Schedules == nil {
 		state.Schedules = map[string]StoredSchedule{}
 	}
+
+	// Self-heal NextID against max(existing ids)+1, the same way
+	// registry.NewRegistry does, so a deleted schedule's id is never
+	// handed out again to a new schedule (which would silently overwrite
+	// whichever one the Hue app still holds a reference to).
+	maxID := 0
+	for id := range state.Schedules {
+		n, err := strconv.Atoi(id)
+		if err != nil {
+			continue
+		}
+		if n > maxID {
+			maxID = n
+		}
+	}
+	if state.NextID <= maxID {
+		state.NextID = maxID + 1
+	}
+	if state.NextID == 0 {
+		state.NextID = 1
+	}
+
 	return &ScheduleStore{file: file, state: state}
 }
 
@@ -49,6 +74,27 @@ func NewScheduleStore(path string) *ScheduleStore {
 // limit: 90 characters serialized. See
 // docs/superpowers/specs/hue-api-v1-openapi.json, schema ScheduleCommand.
 const maxCommandBodyBytes = 90
+
+// weeklyTimePrefix is the only localtime shape v1 supports: "every day, at
+// this wall-clock time". See matchesWeeklyTime.
+const weeklyTimePrefix = "W127/T"
+
+// validateLocalTime rejects any localtime the ticker cannot evaluate, so a
+// malformed value is refused at create time rather than reaching (and
+// previously panicking) the ticker goroutine.
+func validateLocalTime(localTime string) error {
+	if !strings.HasPrefix(localTime, weeklyTimePrefix) {
+		return fmt.Errorf("localtime %q is not supported; expected the form %sHH:MM:SS", localTime, weeklyTimePrefix)
+	}
+	rest := strings.TrimPrefix(localTime, weeklyTimePrefix)
+	if len(rest) < 5 {
+		return fmt.Errorf("localtime %q is too short; expected the form %sHH:MM:SS", localTime, weeklyTimePrefix)
+	}
+	if _, err := time.Parse("15:04:05", rest); err != nil {
+		return fmt.Errorf("localtime %q does not contain a valid HH:MM:SS time", localTime)
+	}
+	return nil
+}
 
 func (s *ScheduleStore) Create(name, address, method string, body any, localTime string) (StoredSchedule, error) {
 	encoded, err := json.Marshal(body)
@@ -58,11 +104,15 @@ func (s *ScheduleStore) Create(name, address, method string, body any, localTime
 	if len(encoded) > maxCommandBodyBytes {
 		return StoredSchedule{}, fmt.Errorf("command body is %d bytes, exceeds the %d-byte limit", len(encoded), maxCommandBodyBytes)
 	}
+	if err := validateLocalTime(localTime); err != nil {
+		return StoredSchedule{}, err
+	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	id := strconv.Itoa(len(s.state.Schedules) + 1)
+	id := strconv.Itoa(s.state.NextID)
+	s.state.NextID++
 	sched := StoredSchedule{ID: id, Name: name, Address: address, Method: method, Body: body, LocalTime: localTime, Status: "enabled"}
 	s.state.Schedules[id] = sched
 	return sched, s.file.Save(s.state)
@@ -123,15 +173,22 @@ func NewTicker(store *ScheduleStore, be backend.Backend, resolve resolveEntityID
 // supported in v1 — absolute and randomized patterns are out of scope
 // until a real need for them shows up.
 func matchesWeeklyTime(pattern string, now time.Time) bool {
-	if !strings.HasPrefix(pattern, "W127/T") {
+	if !strings.HasPrefix(pattern, weeklyTimePrefix) {
 		return false // v1 only supports "every day" (bitmask 127); see design doc non-goals for narrower recurrence
 	}
-	wantTime := strings.TrimPrefix(pattern, "W127/T")
+	wantTime := strings.TrimPrefix(pattern, weeklyTimePrefix)
+	if len(wantTime) < 5 {
+		// Create rejects these, but a hand-edited schedules.json could
+		// still carry one and must never panic the ticker goroutine.
+		return false
+	}
 	gotTime := now.Format("15:04:05")
 	return strings.HasPrefix(gotTime, wantTime[:5]) // compare to the minute
 }
 
-func (t *Ticker) Tick(now time.Time) {
+// Tick fires every schedule due at now. ctx bounds the backend calls it
+// makes; the caller (cmd/huebridge) gives each tick its own short timeout.
+func (t *Ticker) Tick(ctx context.Context, now time.Time) {
 	today := now.Format("2006-01-02 15:04")
 	for _, sched := range t.store.All() {
 		if sched.Status != "enabled" {
@@ -159,7 +216,9 @@ func (t *Ticker) Tick(now time.Time) {
 		}
 
 		if entityID, ok := t.resolveTargetEntity(sched.Address); ok {
-			t.be.SetState(nil, entityID, desired)
+			if err := t.be.SetState(ctx, entityID, desired); err != nil {
+				log.Printf("schedule %s (%s): set state on %s: %v", sched.ID, sched.Name, entityID, err)
+			}
 		}
 
 		sched.lastFiredDay = today

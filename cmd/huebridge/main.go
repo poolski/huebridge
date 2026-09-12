@@ -4,20 +4,37 @@
 package main
 
 import (
+	"context"
 	"crypto/tls"
+	"errors"
+	"fmt"
 	"log"
 	"net"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"syscall"
 	"time"
 
+	"huebridge/internal/backend/cache"
 	"huebridge/internal/backend/homeassistant"
 	"huebridge/internal/discovery"
 	"huebridge/internal/hue"
 	"huebridge/internal/ingress"
 	"huebridge/internal/registry"
 	bridgetls "huebridge/internal/tls"
+)
+
+const (
+	// bridgePort is the HTTPS port the Hue app and SSDP both expect.
+	bridgePort = 443
+	// ingressPort must match addon/config.yaml's ingress_port. Supervisor's
+	// ingress proxy reaches it over plain HTTP inside the add-on network.
+	ingressPort = 8099
+
+	tickTimeout     = 30 * time.Second
+	shutdownTimeout = 10 * time.Second
 )
 
 func mustEnv(key string) string {
@@ -43,59 +60,129 @@ func main() {
 	whitelist := hue.NewWhitelist(filepath.Join(dataDir, "whitelist.json"))
 	pairingWindow := &hue.PairingWindow{}
 
-	be := homeassistant.New(haURL, haToken)
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
 
-	mux := hue.NewServer(
-		reg, be, whitelist, pairingWindow, bridgeID, mac,
-		filepath.Join(dataDir, "scenes.json"),
-		filepath.Join(dataDir, "schedules.json"),
-	)
+	// The Hue app polls /lights about once a second; the cache turns those
+	// polls into reads of a WebSocket-fed snapshot instead of a REST call
+	// per entity per poll.
+	be := cache.New(homeassistant.New(haURL, haToken))
+	go be.Run(ctx)
 
-	scheduleStore := hue.NewScheduleStore(filepath.Join(dataDir, "schedules.json"))
-	ticker := hue.NewTicker(scheduleStore, be, func(id int) (string, bool) {
+	// Scene and schedule stores are constructed once here and shared with
+	// both the HTTP handlers and the ticker — two stores over one file each
+	// keep their own copy of its contents and silently overwrite each
+	// other.
+	scenes := hue.NewSceneStore(filepath.Join(dataDir, "scenes.json"))
+	schedules := hue.NewScheduleStore(filepath.Join(dataDir, "schedules.json"))
+
+	mux := hue.NewServer(reg, be, whitelist, pairingWindow, bridgeID, mac, scenes, schedules)
+
+	ip := resolveLocalIP()
+	mux.HandleFunc("GET /description.xml", handleDescriptionXML(bridgeID, ip, bridgePort))
+
+	ticker := hue.NewTicker(schedules, be, func(id int) (string, bool) {
 		e, ok := reg.ByHueID(id)
 		return e.EntityID, ok
 	})
-	go func() {
-		t := time.NewTicker(time.Minute)
-		defer t.Stop()
-		for now := range t.C {
-			ticker.Tick(now)
-		}
-	}()
+	go runTicker(ctx, ticker)
 
-	ingressHandler := ingress.NewHandler(reg, pairingWindow, func() []string { return nil })
-	http.Handle("/ingress/", http.StripPrefix("/ingress", ingressHandler))
-	http.Handle("/", mux)
+	ingressHandler := ingress.NewHandler(reg, pairingWindow, func() []string {
+		listCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		defer cancel()
+		entities, err := be.ListEntities(listCtx)
+		if err != nil {
+			log.Printf("list Home Assistant entities for the ingress picker: %v", err)
+			return nil
+		}
+		return entities
+	})
+
+	bridgeMux := http.NewServeMux()
+	bridgeMux.Handle("/ingress/", http.StripPrefix("/ingress", ingressHandler))
+	bridgeMux.Handle("/", mux)
 
 	cert, err := bridgetls.GenerateCertificate(bridgeID)
 	if err != nil {
 		log.Fatalf("generate certificate: %v", err)
 	}
 
-	server := &http.Server{
-		Addr:      ":443",
+	bridgeServer := &http.Server{
+		Addr:      fmt.Sprintf(":%d", bridgePort),
+		Handler:   bridgeMux,
 		TLSConfig: &tls.Config{Certificates: []tls.Certificate{cert}},
 	}
+	// Supervisor's ingress proxy speaks plain HTTP to the add-on, so the
+	// UI gets its own listener rather than sharing the TLS one.
+	ingressServer := &http.Server{
+		Addr:    fmt.Sprintf(":%d", ingressPort),
+		Handler: ingressHandler,
+	}
 
-	ip := resolveLocalIP()
-
-	stopSSDP, err := discovery.StartSSDP(bridgeID, ip, 443)
-	if err != nil {
+	if stopSSDP, err := discovery.StartSSDP(bridgeID, ip, bridgePort); err != nil {
 		log.Printf("warning: SSDP discovery did not start: %v", err)
 	} else {
 		defer stopSSDP()
 	}
 
-	stopMDNS, err := discovery.StartMDNS(bridgeID, 443)
-	if err != nil {
+	if stopMDNS, err := discovery.StartMDNS(bridgeID, bridgePort); err != nil {
 		log.Printf("warning: mDNS discovery did not start: %v", err)
 	} else {
 		defer stopMDNS()
 	}
 
-	log.Printf("huebridge starting: bridgeID=%s ip=%s", bridgeID, ip)
-	log.Fatal(server.ListenAndServeTLS("", ""))
+	serverErrs := make(chan error, 2)
+	go func() {
+		if err := bridgeServer.ListenAndServeTLS("", ""); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			serverErrs <- err
+		}
+	}()
+	go func() {
+		if err := ingressServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			serverErrs <- err
+		}
+	}()
+
+	log.Printf("huebridge starting: bridgeID=%s ip=%s api=:%d ingress=:%d", bridgeID, ip, bridgePort, ingressPort)
+
+	select {
+	case err := <-serverErrs:
+		log.Printf("http server failed: %v", err)
+	case <-ctx.Done():
+		log.Print("shutting down")
+	}
+
+	// Stop reacting to further signals so a second Ctrl-C can still kill a
+	// wedged shutdown.
+	stop()
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+	defer cancel()
+	if err := bridgeServer.Shutdown(shutdownCtx); err != nil {
+		log.Printf("shut down api server: %v", err)
+	}
+	if err := ingressServer.Shutdown(shutdownCtx); err != nil {
+		log.Printf("shut down ingress server: %v", err)
+	}
+	// The deferred stopSSDP/stopMDNS run from here, which the previous
+	// log.Fatal(ListenAndServeTLS(...)) skipped entirely.
+}
+
+// runTicker fires due schedules once a minute, giving each tick its own
+// bounded context so a wedged Home Assistant can't stall the loop forever.
+func runTicker(ctx context.Context, ticker *hue.Ticker) {
+	t := time.NewTicker(time.Minute)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case now := <-t.C:
+			tickCtx, cancel := context.WithTimeout(ctx, tickTimeout)
+			ticker.Tick(tickCtx, now)
+			cancel()
+		}
+	}
 }
 
 func envOrDefault(key, def string) string {

@@ -3,7 +3,6 @@ package hue
 import (
 	"bytes"
 	"encoding/json"
-	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"testing"
@@ -26,16 +25,11 @@ func setupServerWithGroup(t *testing.T) (*fake.Backend, *registry.Registry) {
 	return be, reg
 }
 
-func newTestServer(reg *registry.Registry, be backend.Backend, t *testing.T) *http.ServeMux {
-	mac := mustParseMAC("aa:bb:cc:dd:ee:ff")
-	return NewServer(reg, be, NewWhitelist(filepath.Join(t.TempDir(), "wl.json")), &PairingWindow{}, "AABBCCFFFEDDEEFF", mac, filepath.Join(t.TempDir(), "scenes.json"), filepath.Join(t.TempDir(), "schedules.json"))
-}
-
 func TestGroups_GetOne(t *testing.T) {
 	be, reg := setupServerWithGroup(t)
-	srv := newTestServer(reg, be, t)
+	srv := newAuthedServer(t, reg, be, nil, nil)
 
-	req := httptest.NewRequest("GET", "/api/testuser/groups/1", nil)
+	req := httptest.NewRequest("GET", "/api/"+testUser+"/groups/1", nil)
 	rec := httptest.NewRecorder()
 	srv.ServeHTTP(rec, req)
 
@@ -51,9 +45,9 @@ func TestGroups_GetOne(t *testing.T) {
 
 func TestGroups_PutAction(t *testing.T) {
 	be, reg := setupServerWithGroup(t)
-	srv := newTestServer(reg, be, t)
+	srv := newAuthedServer(t, reg, be, nil, nil)
 
-	req := httptest.NewRequest("PUT", "/api/testuser/groups/1/action", bytes.NewReader([]byte(`{"on":true}`)))
+	req := httptest.NewRequest("PUT", "/api/"+testUser+"/groups/1/action", bytes.NewReader([]byte(`{"on":true}`)))
 	rec := httptest.NewRecorder()
 	srv.ServeHTTP(rec, req)
 

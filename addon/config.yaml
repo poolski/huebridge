@@ -9,6 +9,7 @@ init: false
 host_network: true
 ingress: true
 ingress_port: 8099
+homeassistant_api: true
 map:
   - addon_config:rw
 options: {}

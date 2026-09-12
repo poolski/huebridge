@@ -11,7 +11,7 @@ import (
 func TestConfig_GetAuthenticated(t *testing.T) {
 	wl := NewWhitelist(filepath.Join(t.TempDir(), "wl.json"))
 	mac, _ := net.ParseMAC("aa:bb:cc:dd:ee:ff")
-	srv := NewServer(nil, nil, wl, &PairingWindow{}, "AABBCCFFFEDDEEFF", mac, filepath.Join(t.TempDir(), "scenes.json"), filepath.Join(t.TempDir(), "schedules.json"))
+	srv := NewServer(nil, nil, wl, &PairingWindow{}, "AABBCCFFFEDDEEFF", mac, nil, nil)
 
 	req := httptest.NewRequest("GET", "/api/testuser/config", nil)
 	rec := httptest.NewRecorder()

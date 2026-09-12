@@ -20,9 +20,9 @@ func TestScenes_CreateFromGroupCapturesCurrentState(t *testing.T) {
 	reg.Add("light.kitchen", "Kitchen")
 	reg.AddGroup("Downstairs", "Living room", []string{"light.kitchen"})
 
-	srv := NewServer(reg, be, NewWhitelist(filepath.Join(t.TempDir(), "wl.json")), &PairingWindow{}, "AABBCCFFFEDDEEFF", mustParseMAC("aa:bb:cc:dd:ee:ff"), filepath.Join(t.TempDir(), "scenes.json"), filepath.Join(t.TempDir(), "schedules.json"))
+	srv := newAuthedServer(t, reg, be, nil, nil)
 
-	req := httptest.NewRequest("POST", "/api/testuser/scenes", bytes.NewReader([]byte(`{"name":"Relax","group":"1"}`)))
+	req := httptest.NewRequest("POST", "/api/"+testUser+"/scenes", bytes.NewReader([]byte(`{"name":"Relax","group":"1"}`)))
 	rec := httptest.NewRecorder()
 	srv.ServeHTTP(rec, req)
 
@@ -50,23 +50,24 @@ func TestScenes_DeleteRemovesMirroredScene(t *testing.T) {
 	scene, _ := scenes.Create("Relax", "1", []string{"light.kitchen"}, map[string]backend.DesiredState{})
 	be.MirrorScene(nil, scene.ID, "Relax", nil)
 
-	srv := NewServer(reg, be, NewWhitelist(filepath.Join(t.TempDir(), "wl.json")), &PairingWindow{}, "AABBCCFFFEDDEEFF", mustParseMAC("aa:bb:cc:dd:ee:ff"), scenesPath, filepath.Join(t.TempDir(), "schedules.json"))
+	srv := newAuthedServer(t, reg, be, scenes, nil)
 
-	req := httptest.NewRequest("DELETE", "/api/testuser/scenes/"+scene.ID, nil)
+	req := httptest.NewRequest("DELETE", "/api/"+testUser+"/scenes/"+scene.ID, nil)
 	rec := httptest.NewRecorder()
 	srv.ServeHTTP(rec, req)
 
 	if be.MirroredSceneCount() != 0 {
 		t.Fatalf("got %d mirrored scenes after delete, want 0", be.MirroredSceneCount())
 	}
-	// Reload from disk: the server handled the delete through its own
-	// SceneStore instance (constructed from the same scenesPath inside
-	// NewServer), so we verify persistence rather than checking the
-	// in-memory `scenes` handle above, which never observes that store's
-	// writes.
+	// The server was handed this very store, so the delete must be visible
+	// on it in memory...
+	if _, ok := scenes.Get(scene.ID); ok {
+		t.Fatal("expected scene to be removed from the store passed to NewServer")
+	}
+	// ...and persisted to disk.
 	reloaded := NewSceneStore(scenesPath)
 	if _, ok := reloaded.Get(scene.ID); ok {
-		t.Fatal("expected scene to be removed from the store after delete")
+		t.Fatal("expected scene to be removed from the store's file after delete")
 	}
 }
 
@@ -78,9 +79,9 @@ func TestScenes_GetAllReturnsSeededScene(t *testing.T) {
 	scenes := NewSceneStore(scenesPath)
 	scene, _ := scenes.Create("Relax", "1", []string{"light.kitchen"}, map[string]backend.DesiredState{})
 
-	srv := NewServer(reg, be, NewWhitelist(filepath.Join(t.TempDir(), "wl.json")), &PairingWindow{}, "AABBCCFFFEDDEEFF", mustParseMAC("aa:bb:cc:dd:ee:ff"), scenesPath, filepath.Join(t.TempDir(), "schedules.json"))
+	srv := newAuthedServer(t, reg, be, scenes, nil)
 
-	req := httptest.NewRequest("GET", "/api/testuser/scenes", nil)
+	req := httptest.NewRequest("GET", "/api/"+testUser+"/scenes", nil)
 	rec := httptest.NewRecorder()
 	srv.ServeHTTP(rec, req)
 
@@ -105,9 +106,9 @@ func TestScenes_GetOneReturnsScene(t *testing.T) {
 	scenes := NewSceneStore(scenesPath)
 	scene, _ := scenes.Create("Relax", "1", []string{"light.kitchen"}, map[string]backend.DesiredState{})
 
-	srv := NewServer(reg, be, NewWhitelist(filepath.Join(t.TempDir(), "wl.json")), &PairingWindow{}, "AABBCCFFFEDDEEFF", mustParseMAC("aa:bb:cc:dd:ee:ff"), scenesPath, filepath.Join(t.TempDir(), "schedules.json"))
+	srv := newAuthedServer(t, reg, be, scenes, nil)
 
-	req := httptest.NewRequest("GET", "/api/testuser/scenes/"+scene.ID, nil)
+	req := httptest.NewRequest("GET", "/api/"+testUser+"/scenes/"+scene.ID, nil)
 	rec := httptest.NewRecorder()
 	srv.ServeHTTP(rec, req)
 
@@ -124,9 +125,9 @@ func TestScenes_GetOneUnknownIDReturnsError(t *testing.T) {
 	be := fake.New()
 	reg, _ := registry.NewRegistry(filepath.Join(t.TempDir(), "registry.json"))
 
-	srv := NewServer(reg, be, NewWhitelist(filepath.Join(t.TempDir(), "wl.json")), &PairingWindow{}, "AABBCCFFFEDDEEFF", mustParseMAC("aa:bb:cc:dd:ee:ff"), filepath.Join(t.TempDir(), "scenes.json"), filepath.Join(t.TempDir(), "schedules.json"))
+	srv := newAuthedServer(t, reg, be, nil, nil)
 
-	req := httptest.NewRequest("GET", "/api/testuser/scenes/does-not-exist", nil)
+	req := httptest.NewRequest("GET", "/api/"+testUser+"/scenes/does-not-exist", nil)
 	rec := httptest.NewRecorder()
 	srv.ServeHTTP(rec, req)
 

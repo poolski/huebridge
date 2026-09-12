@@ -24,9 +24,9 @@ func setupServerWithOneLight(t *testing.T) (*fake.Backend, *registry.Registry) {
 
 func TestLights_GetAll(t *testing.T) {
 	be, reg := setupServerWithOneLight(t)
-	srv := NewServer(reg, be, NewWhitelist(filepath.Join(t.TempDir(), "wl.json")), &PairingWindow{}, "AABBCCFFFEDDEEFF", mustParseMAC("aa:bb:cc:dd:ee:ff"), filepath.Join(t.TempDir(), "scenes.json"), filepath.Join(t.TempDir(), "schedules.json"))
+	srv := newAuthedServer(t, reg, be, nil, nil)
 
-	req := httptest.NewRequest("GET", "/api/testuser/lights", nil)
+	req := httptest.NewRequest("GET", "/api/"+testUser+"/lights", nil)
 	rec := httptest.NewRecorder()
 	srv.ServeHTTP(rec, req)
 
@@ -45,9 +45,9 @@ func TestLights_GetAll(t *testing.T) {
 
 func TestLights_PutState(t *testing.T) {
 	be, reg := setupServerWithOneLight(t)
-	srv := NewServer(reg, be, NewWhitelist(filepath.Join(t.TempDir(), "wl.json")), &PairingWindow{}, "AABBCCFFFEDDEEFF", mustParseMAC("aa:bb:cc:dd:ee:ff"), filepath.Join(t.TempDir(), "scenes.json"), filepath.Join(t.TempDir(), "schedules.json"))
+	srv := newAuthedServer(t, reg, be, nil, nil)
 
-	req := httptest.NewRequest("PUT", "/api/testuser/lights/1/state", bytes.NewReader([]byte(`{"on":true,"bri":200}`)))
+	req := httptest.NewRequest("PUT", "/api/"+testUser+"/lights/1/state", bytes.NewReader([]byte(`{"on":true,"bri":200}`)))
 	rec := httptest.NewRecorder()
 	srv.ServeHTTP(rec, req)
 
@@ -65,9 +65,9 @@ func TestLights_PutState(t *testing.T) {
 
 func TestLights_PutStateUnknownID(t *testing.T) {
 	be, reg := setupServerWithOneLight(t)
-	srv := NewServer(reg, be, NewWhitelist(filepath.Join(t.TempDir(), "wl.json")), &PairingWindow{}, "AABBCCFFFEDDEEFF", mustParseMAC("aa:bb:cc:dd:ee:ff"), filepath.Join(t.TempDir(), "scenes.json"), filepath.Join(t.TempDir(), "schedules.json"))
+	srv := newAuthedServer(t, reg, be, nil, nil)
 
-	req := httptest.NewRequest("PUT", "/api/testuser/lights/99/state", bytes.NewReader([]byte(`{"on":true}`)))
+	req := httptest.NewRequest("PUT", "/api/"+testUser+"/lights/99/state", bytes.NewReader([]byte(`{"on":true}`)))
 	rec := httptest.NewRecorder()
 	srv.ServeHTTP(rec, req)
 

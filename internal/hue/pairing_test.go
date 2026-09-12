@@ -20,7 +20,7 @@ func mustParseMAC(s string) net.HardwareAddr {
 func TestPairing_RejectedWithoutOpenWindow(t *testing.T) {
 	wl := NewWhitelist(filepath.Join(t.TempDir(), "whitelist.json"))
 	win := &PairingWindow{}
-	srv := NewServer(nil, nil, wl, win, "AABBCCFFFEDDEEFF", mustParseMAC("aa:bb:cc:dd:ee:ff"), filepath.Join(t.TempDir(), "scenes.json"), filepath.Join(t.TempDir(), "schedules.json"))
+	srv := NewServer(nil, nil, wl, win, "AABBCCFFFEDDEEFF", mustParseMAC("aa:bb:cc:dd:ee:ff"), nil, nil)
 
 	req := httptest.NewRequest("POST", "/api", bytes.NewReader([]byte(`{"devicetype":"test#app"}`)))
 	rec := httptest.NewRecorder()
@@ -41,7 +41,7 @@ func TestPairing_SucceedsWithOpenWindow(t *testing.T) {
 	wl := NewWhitelist(filepath.Join(t.TempDir(), "whitelist.json"))
 	win := &PairingWindow{}
 	win.Open(30 * timeSecond)
-	srv := NewServer(nil, nil, wl, win, "AABBCCFFFEDDEEFF", mustParseMAC("aa:bb:cc:dd:ee:ff"), filepath.Join(t.TempDir(), "scenes.json"), filepath.Join(t.TempDir(), "schedules.json"))
+	srv := NewServer(nil, nil, wl, win, "AABBCCFFFEDDEEFF", mustParseMAC("aa:bb:cc:dd:ee:ff"), nil, nil)
 
 	req := httptest.NewRequest("POST", "/api", bytes.NewReader([]byte(`{"devicetype":"test#app"}`)))
 	rec := httptest.NewRecorder()
