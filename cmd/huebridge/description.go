@@ -7,7 +7,7 @@ import (
 )
 
 // descriptionXMLTemplate is the UPnP 1.0 root device descriptor SSDP points
-// at (LOCATION: https://<ip>:443/description.xml). The Hue app fetches it
+// at (LOCATION: https://<ip>:<port>/description.xml). The Hue app fetches it
 // during discovery and matches on modelName/manufacturer, so the field
 // values mirror what a real bridge returns rather than naming huebridge.
 const descriptionXMLTemplate = `<?xml version="1.0" encoding="UTF-8" ?>

@@ -36,7 +36,18 @@ configure by hand.
 
 ## Setup
 
-huebridge has no YAML options — everything is done through its ingress panel.
+huebridge has one option, set on the add-on's **Configuration** tab:
+
+- **`api_port`** (default `8299`) — the port the emulated Hue Bridge API,
+  and its SSDP/mDNS discovery, listens on. Real Hue bridges use 443, but on
+  a Home Assistant host that port is normally already owned by something
+  else (Home Assistant's own web server, a reverse proxy, an SSL
+  terminator, ...), so huebridge defaults to a free port instead of
+  competing for it. The Hue app discovers whatever port is advertised, so
+  there's no need to change this unless `8299` itself collides with
+  something on your network.
+
+Everything else is done through its ingress panel.
 
 1. With the add-on running, click **Open Web UI** (or the ingress icon) on
    the add-on's page.

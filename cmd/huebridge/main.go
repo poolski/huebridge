@@ -28,8 +28,12 @@ import (
 )
 
 const (
-	// bridgePort is the HTTPS port the Hue app and SSDP both expect.
-	bridgePort = 443
+	// defaultBridgePort is used when HUEBRIDGE_API_PORT isn't set. The real
+	// Hue app conventionally expects the bridge on 443, but that's often
+	// already taken by another host_network add-on (a reverse proxy, an SSL
+	// terminator, ...), so the add-on's api_port option lets a user free
+	// that up on their own terms rather than huebridge claiming it outright.
+	defaultBridgePort = 8299
 
 	// defaultIngressPort is used outside the add-on (e.g. local dev), where
 	// INGRESS_PORT isn't set.
@@ -56,6 +60,7 @@ func main() {
 	// at startup (avoiding collisions with other host_network add-ons) and
 	// hands it back via INGRESS_PORT.
 	ingressPort := envIntOrDefault("INGRESS_PORT", defaultIngressPort)
+	bridgePort := envIntOrDefault("HUEBRIDGE_API_PORT", defaultBridgePort)
 
 	mac := lookupMAC()
 	bridgeID := bridgetls.BridgeID(mac)
@@ -141,7 +146,7 @@ func main() {
 	serverErrs := make(chan error, 2)
 	go func() {
 		if err := bridgeServer.ListenAndServeTLS("", ""); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			serverErrs <- err
+			serverErrs <- fmt.Errorf("bind bridge port %d (change the api_port add-on option if something else on the host already uses it): %w", bridgePort, err)
 		}
 	}()
 	go func() {

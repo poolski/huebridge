@@ -4,9 +4,22 @@ Emulates a Philips Hue Bridge over a curated set of Home Assistant entities,
 so the real Hue app (or anything that speaks Hue, like Alexa or Google Home)
 can discover and control them without an actual Hue Bridge.
 
-## Setup
+## Options
 
-huebridge has no YAML options — everything is done through its ingress panel.
+| Option     | Default | Description                                                             |
+| ---------- | ------- | ----------------------------------------------------------------------- |
+| `api_port` | `8299`  | Port the emulated Hue Bridge API and its SSDP/mDNS discovery listen on. |
+
+Real Hue bridges use 443, but on a Home Assistant host that's usually
+already taken (by Home Assistant itself, a reverse proxy, ...), so huebridge
+defaults elsewhere instead of competing for it. The Hue app discovers
+whatever port is advertised, so there's no need to change this unless
+`8299` itself collides with something on your network.
+
+Everything else is done through the add-on's ingress panel — there are no
+other YAML options.
+
+## Setup
 
 1. Start the add-on.
 2. Click **Open Web UI** on the add-on's page.
