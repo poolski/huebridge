@@ -105,6 +105,29 @@ in Portainer, and works with Podman's `podman-compose`/`podman compose`):
 docker compose up -d --build
 ```
 
+### Running on Proxmox (LXC)
+
+An LXC is arguably the better fit for standalone huebridge than a Docker
+container: it gets its own address directly on the LAN bridge, so there's
+nothing to configure for SSDP/mDNS discovery or binding `443` — no
+`--network host` equivalent needed, it's just how LXC networking works.
+
+Run this on the Proxmox host itself, as root:
+
+```bash
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/poolski/huebridge/main/scripts/proxmox/create-lxc.sh)"
+```
+
+It walks through the same default-vs-advanced-settings prompts as the
+[Proxmox VE Community Scripts](https://github.com/community-scripts/ProxmoxVE)
+you may already be used to (this doesn't depend on that project — it's a
+self-contained script in this repo, `scripts/proxmox/create-lxc.sh`, at the
+default settings: Debian 12, 1 vCPU, 512MB RAM, 4GB disk, DHCP), creates an
+unprivileged LXC, and installs huebridge into it as a systemd service
+listening on `443`, built from source since there's no published binary
+release yet. Every setting is also overridable non-interactively via
+environment variables — see the script's header comment.
+
 - **`HUEBRIDGE_API_PORT`** (default `8299`) — same as the add-on's
   `api_port` option: the emulated Hue Bridge API and its SSDP/mDNS
   discovery.
