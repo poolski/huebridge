@@ -56,6 +56,18 @@ func NewRegistry(path string) (*Registry, error) {
 		state.NextID = maxHueID + 1
 	}
 
+	// Same self-heal for groups: ensure NextGroupID is strictly greater than
+	// all existing group HueIDs.
+	maxGroupHueID := 0
+	for _, g := range state.Groups {
+		if g.HueID > maxGroupHueID {
+			maxGroupHueID = g.HueID
+		}
+	}
+	if state.NextGroupID <= maxGroupHueID {
+		state.NextGroupID = maxGroupHueID + 1
+	}
+
 	return &Registry{file: file, state: state}, nil
 }
 
