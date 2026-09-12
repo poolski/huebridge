@@ -2,9 +2,19 @@ services:
   huebridge:
     build: .
     restart: unless-stopped
-    ports:
-      - "8299:8299"
-      - "8300:8300"
+    # SSDP/mDNS discovery (how the Hue app finds a bridge) is LAN
+    # multicast — it doesn't cross Docker's default bridge network, and a
+    # container on it would advertise its own internal IP anyway, which
+    # the Hue app could never reach. Host networking is required, the
+    # same way the Home Assistant add-on requires host_network: true.
+    network_mode: host
+    environment:
+      # The official Hue app's local search never follows the
+      # SSDP-advertised port — it only probes 80/443. A standalone host
+      # (unlike the HA add-on's) usually has nothing else on 443, so bind
+      # it directly rather than hitting that limitation. Remove this if
+      # something else on the host already owns 443.
+      - HUEBRIDGE_API_PORT=443
     volumes:
       - huebridge-data:/data
 
