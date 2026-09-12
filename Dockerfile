@@ -1,5 +1,5 @@
-ARG BUILD_FROM
-FROM golang:1.27-bookworm AS build
+ARG BUILD_FROM=alpine:3.22
+FROM golang:1.27-alpine3.22 AS build
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download

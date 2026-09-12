@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -29,9 +30,10 @@ import (
 const (
 	// bridgePort is the HTTPS port the Hue app and SSDP both expect.
 	bridgePort = 443
-	// ingressPort must match addon/config.yaml's ingress_port. Supervisor's
-	// ingress proxy reaches it over plain HTTP inside the add-on network.
-	ingressPort = 8099
+
+	// defaultIngressPort is used outside the add-on (e.g. local dev), where
+	// INGRESS_PORT isn't set.
+	defaultIngressPort = 8298
 
 	tickTimeout     = 30 * time.Second
 	shutdownTimeout = 10 * time.Second
@@ -49,6 +51,11 @@ func main() {
 	dataDir := envOrDefault("HUEBRIDGE_DATA_DIR", "/data")
 	haURL := mustEnv("HUEBRIDGE_HA_URL")
 	haToken := mustEnv("SUPERVISOR_TOKEN")
+
+	// config.yaml sets ingress_port: 0, so Supervisor picks a free host port
+	// at startup (avoiding collisions with other host_network add-ons) and
+	// hands it back via INGRESS_PORT.
+	ingressPort := envIntOrDefault("INGRESS_PORT", defaultIngressPort)
 
 	mac := lookupMAC()
 	bridgeID := bridgetls.BridgeID(mac)
@@ -190,6 +197,18 @@ func envOrDefault(key, def string) string {
 		return v
 	}
 	return def
+}
+
+func envIntOrDefault(key string, def int) int {
+	v := os.Getenv(key)
+	if v == "" {
+		return def
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil {
+		log.Fatalf("environment variable %s must be an integer, got %q", key, v)
+	}
+	return n
 }
 
 // lookupMAC finds the first non-loopback interface's MAC address to derive
