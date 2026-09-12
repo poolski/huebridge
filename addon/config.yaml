@@ -1,0 +1,15 @@
+name: huebridge
+version: "0.1.0"
+slug: huebridge
+description: Emulates a Philips Hue Bridge over a curated set of Home Assistant entities
+arch:
+  - amd64
+  - aarch64
+init: false
+host_network: true
+ingress: true
+ingress_port: 8099
+map:
+  - addon_config:rw
+options: {}
+schema: {}
