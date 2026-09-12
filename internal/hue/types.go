@@ -4,13 +4,13 @@ package hue
 // docs/superpowers/specs/hue-api-v1-openapi.json, schema LightState, and
 // hue-clip-v1-api-reference.md's "Lights" section for field semantics.
 type LightState struct {
-	On        bool       `json:"on"`
-	Bri       *uint8     `json:"bri,omitempty"`
+	On        bool        `json:"on"`
+	Bri       *uint8      `json:"bri,omitempty"`
 	Xy        *[2]float64 `json:"xy,omitempty"`
-	Ct        *uint16    `json:"ct,omitempty"`
-	ColorMode string     `json:"colormode,omitempty"`
-	Alert     string     `json:"alert,omitempty"`
-	Reachable bool       `json:"reachable"`
+	Ct        *uint16     `json:"ct,omitempty"`
+	ColorMode string      `json:"colormode,omitempty"`
+	Alert     string      `json:"alert,omitempty"`
+	Reachable bool        `json:"reachable"`
 }
 
 type Light struct {
@@ -53,4 +53,21 @@ type BridgeConfig struct {
 	ModelID          string `json:"modelid"`
 	ZigbeeChannel    int    `json:"zigbeechannel"`
 	LinkButton       bool   `json:"linkbutton"`
+}
+
+type SceneLightState struct {
+	On  bool   `json:"on"`
+	Bri *uint8 `json:"bri,omitempty"`
+}
+
+type Scene struct {
+	ID          string                     `json:"-"`
+	Name        string                     `json:"name"`
+	Type        string                     `json:"type"`
+	Group       string                     `json:"group,omitempty"`
+	Lights      []string                   `json:"lights"`
+	LightStates map[string]SceneLightState `json:"lightstates"`
+	Owner       string                     `json:"owner"`
+	Recycle     bool                       `json:"recycle"`
+	Locked      bool                       `json:"locked"`
 }

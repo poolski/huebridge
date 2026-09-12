@@ -2,8 +2,8 @@ package hue
 
 import (
 	"encoding/json"
-	"net/http/httptest"
 	"net"
+	"net/http/httptest"
 	"path/filepath"
 	"testing"
 )
@@ -11,7 +11,7 @@ import (
 func TestConfig_GetAuthenticated(t *testing.T) {
 	wl := NewWhitelist(filepath.Join(t.TempDir(), "wl.json"))
 	mac, _ := net.ParseMAC("aa:bb:cc:dd:ee:ff")
-	srv := NewServer(nil, nil, wl, &PairingWindow{}, "AABBCCFFFEDDEEFF", mac)
+	srv := NewServer(nil, nil, wl, &PairingWindow{}, "AABBCCFFFEDDEEFF", mac, filepath.Join(t.TempDir(), "scenes.json"))
 
 	req := httptest.NewRequest("GET", "/api/testuser/config", nil)
 	rec := httptest.NewRecorder()

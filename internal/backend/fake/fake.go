@@ -10,9 +10,10 @@ import (
 )
 
 type Backend struct {
-	mu     sync.Mutex
-	states map[string]backend.EntityState
-	subs   []chan backend.StateChange
+	mu             sync.Mutex
+	states         map[string]backend.EntityState
+	subs           []chan backend.StateChange
+	mirroredScenes map[string]bool
 }
 
 func New() *Backend {
@@ -78,4 +79,27 @@ func (b *Backend) Subscribe(_ context.Context) (<-chan backend.StateChange, erro
 	ch := make(chan backend.StateChange, 16)
 	b.subs = append(b.subs, ch)
 	return ch, nil
+}
+
+func (b *Backend) MirrorScene(_ context.Context, sceneID, name string, lightStates map[string]backend.DesiredState) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.mirroredScenes == nil {
+		b.mirroredScenes = map[string]bool{}
+	}
+	b.mirroredScenes[sceneID] = true
+	return nil
+}
+
+func (b *Backend) DeleteMirroredScene(_ context.Context, sceneID string) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	delete(b.mirroredScenes, sceneID)
+	return nil
+}
+
+func (b *Backend) MirroredSceneCount() int {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return len(b.mirroredScenes)
 }

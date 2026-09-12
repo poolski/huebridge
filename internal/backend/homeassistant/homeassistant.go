@@ -153,3 +153,50 @@ func addAttributes(payload map[string]any, desired backend.DesiredState) {
 		payload["color_temp"] = *desired.ColorTempMirek
 	}
 }
+
+// MirrorScene creates or replaces a bridge-owned HA scene via HA's scene
+// config storage collection API. Scene ids are namespaced with a
+// "huebridge_" prefix so they never collide with or overwrite scenes
+// managed directly in HA.
+func (b *Backend) MirrorScene(ctx context.Context, sceneID, name string, lightStates map[string]backend.DesiredState) error {
+	entities := map[string]any{}
+	for entityID, desired := range lightStates {
+		state := "off"
+		attrs := map[string]any{}
+		if desired.On != nil && *desired.On {
+			state = "on"
+		}
+		if desired.Brightness != nil {
+			attrs["brightness"] = *desired.Brightness
+		}
+		entities[entityID] = map[string]any{"state": state, "attributes": attrs}
+	}
+
+	payload := map[string]any{
+		"id":       "huebridge_" + sceneID,
+		"name":     "[Hue] " + name,
+		"entities": entities,
+	}
+
+	resp, err := b.doJSON(ctx, http.MethodPost, "/api/config/scene/config/huebridge_"+sceneID, payload)
+	if err != nil {
+		return fmt.Errorf("mirror scene: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("mirror scene: unexpected status %d", resp.StatusCode)
+	}
+	return nil
+}
+
+func (b *Backend) DeleteMirroredScene(ctx context.Context, sceneID string) error {
+	resp, err := b.doJSON(ctx, http.MethodDelete, "/api/config/scene/config/huebridge_"+sceneID, nil)
+	if err != nil {
+		return fmt.Errorf("delete mirrored scene: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("delete mirrored scene: unexpected status %d", resp.StatusCode)
+	}
+	return nil
+}

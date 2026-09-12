@@ -38,3 +38,12 @@ type Backend interface {
 	// normal operation — callers should treat closure as fatal).
 	Subscribe(ctx context.Context) (<-chan StateChange, error)
 }
+
+// SceneMirror is implemented by backends that can mirror a Hue-app scene
+// into their own native scene concept. HomeAssistantBackend implements it
+// against HA's scene config storage collection; not every future Backend
+// needs to.
+type SceneMirror interface {
+	MirrorScene(ctx context.Context, sceneID, name string, lightStates map[string]DesiredState) error
+	DeleteMirroredScene(ctx context.Context, sceneID string) error
+}
