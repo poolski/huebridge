@@ -73,6 +73,32 @@ func TestMiddleware_DebugLogsRequestAndResponseBodies(t *testing.T) {
 	}
 }
 
+func TestMiddleware_DebugRedactsAuthorizationAndCookieHeaders(t *testing.T) {
+	var buf bytes.Buffer
+	logger := log.New(&buf, "", 0)
+
+	handler := Middleware(logger, LevelDebug)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest("GET", "/ingress/", nil)
+	req.Header.Set("Authorization", "Basic YWRtaW46aHVudGVyMg==")
+	req.Header.Set("Cookie", "ingress_session=super-secret")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	out := buf.String()
+	if strings.Contains(out, "YWRtaW46aHVudGVyMg==") {
+		t.Fatalf("Authorization header value leaked into debug log output: %q", out)
+	}
+	if strings.Contains(out, "super-secret") {
+		t.Fatalf("Cookie header value leaked into debug log output: %q", out)
+	}
+	if !strings.Contains(out, "[redacted]") {
+		t.Fatalf("expected redaction placeholder in debug log output, got %q", out)
+	}
+}
+
 func readAll(r *http.Request) ([]byte, error) {
 	buf := make([]byte, r.ContentLength)
 	_, err := r.Body.Read(buf)

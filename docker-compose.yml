@@ -1,0 +1,12 @@
+services:
+  huebridge:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "8299:8299"
+      - "8300:8300"
+    volumes:
+      - huebridge-data:/data
+
+volumes:
+  huebridge-data:

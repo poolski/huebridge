@@ -68,6 +68,58 @@ Everything else is done through its ingress panel.
 Entities can be added, removed, or regrouped at any time from the same UI —
 changes take effect immediately, no restart needed.
 
+## Running standalone
+
+huebridge can also run without Home Assistant's Supervisor — e.g. on
+separate hardware from HA, or against HA Core without the Supervisor. It's
+the same binary; it switches into standalone mode automatically whenever
+`SUPERVISOR_TOKEN` isn't set (i.e. whenever it's not started as a
+Supervisor add-on).
+
+There's no published image for this yet — build one from the `Dockerfile`
+in this repo, then run it:
+
+```bash
+docker build -t huebridge .
+docker run -d \
+  -p 8299:8299 -p 8300:8300 \
+  -v huebridge-data:/data \
+  huebridge
+```
+
+Or, with the `docker-compose.yml` in this repo (also importable as a stack
+in Portainer, and works with Podman's `podman-compose`/`podman compose`):
+
+```bash
+docker compose up -d --build
+```
+
+- **`HUEBRIDGE_API_PORT`** (default `8299`) — same as the add-on's
+  `api_port` option: the emulated Hue Bridge API and its SSDP/mDNS
+  discovery.
+- **`HUEBRIDGE_ADMIN_PORT`** (default `8300`) — the setup wizard and,
+  afterwards, the entity-picker UI. Both are served over HTTPS with a
+  self-signed cert (browsers will warn once) and, after setup, gated by
+  HTTP Basic Auth (`admin` / the password you set during setup).
+- **`HUEBRIDGE_DATA_DIR`** (default `/data`) — where `standalone.json`
+  (your HA URL, token, and admin password hash), the entity registry, and
+  scenes/schedules are stored.
+
+The first-run setup wizard itself is unauthenticated — it has to be, since
+there's no password yet for it to check — and listens on all interfaces.
+Anyone who can reach `HUEBRIDGE_ADMIN_PORT` before you complete setup can
+claim the bridge and its Home Assistant connection. Complete the wizard
+promptly on a trusted network (right after `docker run`, before exposing
+the port beyond your LAN).
+
+On first run, open `https://<host>:8300/` and follow the two-step wizard:
+set an admin password, then enter your Home Assistant URL (huebridge tries
+to find it via mDNS and prefills the field if it does) and a [long-lived
+access token](https://www.home-assistant.io/docs/authentication/#your-account-profile)
+from your HA profile. huebridge verifies the token against HA before
+accepting it. After that, the same entity picker the add-on's ingress
+panel offers is available at the admin URL, behind that password.
+
 ## Troubleshooting
 
 - **App doesn't find the bridge**: confirm the add-on is running and that

@@ -52,6 +52,26 @@ func (r *statusRecorder) Write(b []byte) (int, error) {
 	return r.ResponseWriter.Write(b)
 }
 
+// redactedHeaders lists header names (matched case-insensitively via
+// http.Header's own accessors) whose values are trivially-reversible or
+// plaintext credentials, not safe to write to logs even at debug level:
+// standalone's Basic Auth credentials, and the add-on ingress path's HA
+// session cookie, if either is ever present.
+var redactedHeaders = []string{"Authorization", "Cookie"}
+
+// redactHeaders returns a shallow copy of h with the values of
+// redactedHeaders replaced by a placeholder, for safe inclusion in debug
+// logs.
+func redactHeaders(h http.Header) http.Header {
+	clone := h.Clone()
+	for _, name := range redactedHeaders {
+		if clone.Get(name) != "" {
+			clone.Set(name, "[redacted]")
+		}
+	}
+	return clone
+}
+
 // Middleware logs every request at the given level. At LevelDebug it reads
 // the request body up front and replaces r.Body with a fresh reader over
 // the same bytes, so downstream handlers see it unchanged.
@@ -76,7 +96,7 @@ func Middleware(logger *log.Logger, level Level) func(http.Handler) http.Handler
 			duration := time.Since(start)
 			if level == LevelDebug {
 				logger.Printf("DEBUG %s %s status=%d duration=%s headers=%v request_body=%s response_body=%s",
-					r.Method, r.URL.Path, rec.status, duration, r.Header, reqBody, rec.body.Bytes())
+					r.Method, r.URL.Path, rec.status, duration, redactHeaders(r.Header), reqBody, rec.body.Bytes())
 			} else {
 				logger.Printf("%s %s status=%d duration=%s", r.Method, r.URL.Path, rec.status, duration)
 			}
