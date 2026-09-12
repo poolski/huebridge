@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+
+	"huebridge/internal/backend"
 )
 
 func newTestServer(t *testing.T, wsHandler http.HandlerFunc) (*httptest.Server, *Backend) {
@@ -97,5 +99,66 @@ func TestHomeAssistantBackend_SubscribeReceivesStateChangedEvent(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("timed out waiting for state change")
+	}
+}
+
+// newSetStateTestServer builds a REST-only test server whose
+// /api/states/light.kitchen response reports the given on/off state, and
+// which records whether /api/services/light/turn_on was called.
+func newSetStateTestServer(t *testing.T, entityOn bool) (b *Backend, turnOnCalled *bool) {
+	called := false
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/states/light.kitchen", func(w http.ResponseWriter, r *http.Request) {
+		state := "off"
+		if entityOn {
+			state = "on"
+		}
+		json.NewEncoder(w).Encode(map[string]any{
+			"entity_id":  "light.kitchen",
+			"state":      state,
+			"attributes": map[string]any{},
+		})
+	})
+	mux.HandleFunc("/api/services/light/turn_on", func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		w.WriteHeader(http.StatusOK)
+	})
+	mux.HandleFunc("/api/services/light/turn_off", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	return New(srv.URL, "test-token"), &called
+}
+
+func TestHomeAssistantBackend_SetState_NilOnAttributeOnlyWhileOff_NoServiceCall(t *testing.T) {
+	b, turnOnCalled := newSetStateTestServer(t, false)
+
+	brightness := uint8(150)
+	err := b.SetState(context.Background(), "light.kitchen", backend.DesiredState{
+		Brightness: &brightness,
+	})
+	if err != nil {
+		t.Fatalf("SetState() error: %v", err)
+	}
+	if *turnOnCalled {
+		t.Fatal("turn_on service was called, but entity was off and On was nil (leave as-is)")
+	}
+}
+
+func TestHomeAssistantBackend_SetState_NilOnAttributeOnlyWhileOn_CallsTurnOn(t *testing.T) {
+	b, turnOnCalled := newSetStateTestServer(t, true)
+
+	brightness := uint8(150)
+	err := b.SetState(context.Background(), "light.kitchen", backend.DesiredState{
+		Brightness: &brightness,
+	})
+	if err != nil {
+		t.Fatalf("SetState() error: %v", err)
+	}
+	if !*turnOnCalled {
+		t.Fatal("turn_on service was not called, but entity was already on and had attribute changes to apply")
 	}
 }

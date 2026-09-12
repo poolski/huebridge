@@ -97,20 +97,37 @@ func (b *Backend) GetState(ctx context.Context, entityID string) (backend.Entity
 
 func (b *Backend) SetState(ctx context.Context, entityID string, desired backend.DesiredState) error {
 	domain := strings.SplitN(entityID, ".", 2)[0]
-	service := "turn_off"
 	payload := map[string]any{"entity_id": entityID}
 
-	if desired.On == nil || *desired.On {
+	var service string
+	switch {
+	case desired.On != nil && !*desired.On:
+		// Explicit off.
+		service = "turn_off"
+	case desired.On != nil && *desired.On:
+		// Explicit on, plus any attribute changes.
 		service = "turn_on"
-		if desired.Brightness != nil {
-			payload["brightness"] = *desired.Brightness
+		addAttributes(payload, desired)
+	default:
+		// desired.On == nil: leave on/off state as-is (Task 1 contract).
+		// HA has no way to change a light's attributes without implicitly
+		// turning it on, so we only issue turn_on (to apply attribute
+		// changes) when the entity is already on; otherwise this is a
+		// no-op.
+		hasAttrChanges := desired.Brightness != nil || desired.ColorXY != nil || desired.ColorTempMirek != nil
+		if !hasAttrChanges {
+			return nil
 		}
-		if desired.ColorXY != nil {
-			payload["xy_color"] = []float64{desired.ColorXY[0], desired.ColorXY[1]}
+
+		current, err := b.GetState(ctx, entityID)
+		if err != nil {
+			return fmt.Errorf("get current state: %w", err)
 		}
-		if desired.ColorTempMirek != nil {
-			payload["color_temp"] = *desired.ColorTempMirek
+		if !current.On {
+			return nil
 		}
+		service = "turn_on"
+		addAttributes(payload, desired)
 	}
 
 	resp, err := b.doJSON(ctx, http.MethodPost, fmt.Sprintf("/api/services/%s/%s", domain, service), payload)
@@ -123,4 +140,16 @@ func (b *Backend) SetState(ctx context.Context, entityID string, desired backend
 		return fmt.Errorf("call service: unexpected status %d", resp.StatusCode)
 	}
 	return nil
+}
+
+func addAttributes(payload map[string]any, desired backend.DesiredState) {
+	if desired.Brightness != nil {
+		payload["brightness"] = *desired.Brightness
+	}
+	if desired.ColorXY != nil {
+		payload["xy_color"] = []float64{desired.ColorXY[0], desired.ColorXY[1]}
+	}
+	if desired.ColorTempMirek != nil {
+		payload["color_temp"] = *desired.ColorTempMirek
+	}
 }
