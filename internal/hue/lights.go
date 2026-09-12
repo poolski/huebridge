@@ -1,7 +1,6 @@
 package hue
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -131,5 +130,3 @@ func handlePutLightState(reg *registry.Registry, be backend.Backend) http.Handle
 		json.NewEncoder(w).Encode(items)
 	}
 }
-
-var _ = context.Background // keep context import if unused paths trimmed later

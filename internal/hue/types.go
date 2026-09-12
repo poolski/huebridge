@@ -22,3 +22,16 @@ type Light struct {
 	UniqueID         string     `json:"uniqueid"`
 	SwVersion        string     `json:"swversion"`
 }
+
+type BridgeConfig struct {
+	Name             string `json:"name"`
+	DatastoreVersion string `json:"datastoreversion"`
+	SwVersion        string `json:"swversion"`
+	APIVersion       string `json:"apiversion"`
+	Mac              string `json:"mac"`
+	BridgeID         string `json:"bridgeid"`
+	FactoryNew       bool   `json:"factorynew"`
+	ModelID          string `json:"modelid"`
+	ZigbeeChannel    int    `json:"zigbeechannel"`
+	LinkButton       bool   `json:"linkbutton"`
+}

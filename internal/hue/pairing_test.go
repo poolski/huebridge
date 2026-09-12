@@ -3,15 +3,24 @@ package hue
 import (
 	"bytes"
 	"encoding/json"
+	"net"
 	"net/http/httptest"
 	"path/filepath"
 	"testing"
 )
 
+func mustParseMAC(s string) net.HardwareAddr {
+	mac, err := net.ParseMAC(s)
+	if err != nil {
+		panic(err)
+	}
+	return mac
+}
+
 func TestPairing_RejectedWithoutOpenWindow(t *testing.T) {
 	wl := NewWhitelist(filepath.Join(t.TempDir(), "whitelist.json"))
 	win := &PairingWindow{}
-	srv := NewServer(nil, nil, wl, win)
+	srv := NewServer(nil, nil, wl, win, "AABBCCFFFEDDEEFF", mustParseMAC("aa:bb:cc:dd:ee:ff"))
 
 	req := httptest.NewRequest("POST", "/api", bytes.NewReader([]byte(`{"devicetype":"test#app"}`)))
 	rec := httptest.NewRecorder()
@@ -32,7 +41,7 @@ func TestPairing_SucceedsWithOpenWindow(t *testing.T) {
 	wl := NewWhitelist(filepath.Join(t.TempDir(), "whitelist.json"))
 	win := &PairingWindow{}
 	win.Open(30 * timeSecond)
-	srv := NewServer(nil, nil, wl, win)
+	srv := NewServer(nil, nil, wl, win, "AABBCCFFFEDDEEFF", mustParseMAC("aa:bb:cc:dd:ee:ff"))
 
 	req := httptest.NewRequest("POST", "/api", bytes.NewReader([]byte(`{"devicetype":"test#app"}`)))
 	rec := httptest.NewRecorder()
