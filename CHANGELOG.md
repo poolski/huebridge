@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.3
+
+- Fix the bridge not appearing in the Hue app's search: its mDNS TXT record
+  was missing `modelid=BSB002`, which a real bridge always sends alongside
+  `bridgeid` and which the app's local discovery filters on.
+- Polish the ingress web UI (card layout, auto light/dark theme) and limit
+  its entity picker to `light.*` entities.
+- Add a `log_level` option (`info`/`debug`) for request logging — `debug`
+  additionally logs headers and request/response bodies.
+
 ## 0.1.2
 
 - Fix ingress being unreachable: with `ingress_port: 0`, Supervisor never
