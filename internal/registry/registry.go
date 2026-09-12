@@ -95,7 +95,7 @@ func (r *Registry) Remove(entityID string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	filtered := r.state.Entries[:0]
+	filtered := make([]Entry, 0, len(r.state.Entries))
 	for _, e := range r.state.Entries {
 		if e.EntityID != entityID {
 			filtered = append(filtered, e)
@@ -106,6 +106,21 @@ func (r *Registry) Remove(entityID string) error {
 		return nil
 	}
 	r.state.Entries = filtered
+
+	// Strip the entity from every group too. Leaving it behind would give
+	// groups members with no registry entry, which renders as a phantom
+	// light id in the CLIP group payload.
+	for i, g := range r.state.Groups {
+		members := make([]string, 0, len(g.EntityIDs))
+		for _, id := range g.EntityIDs {
+			if id != entityID {
+				members = append(members, id)
+			}
+		}
+		if len(members) != len(g.EntityIDs) {
+			r.state.Groups[i].EntityIDs = members
+		}
+	}
 
 	return r.file.Save(r.state)
 }

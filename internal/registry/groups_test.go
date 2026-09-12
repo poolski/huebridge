@@ -72,3 +72,36 @@ func TestRegistry_HandlesCorruptedNextGroupID(t *testing.T) {
 		t.Fatalf("got HueID=%d, want > 3 to avoid collision with existing groups", g.HueID)
 	}
 }
+
+func TestRegistry_RemoveStripsEntityFromGroups(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "registry.json")
+	r, _ := NewRegistry(path)
+	r.Add("light.kitchen", "Kitchen")
+	r.Add("light.hall", "Hall")
+	r.AddGroup("Downstairs", "Living room", []string{"light.kitchen", "light.hall"})
+
+	if err := r.Remove("light.kitchen"); err != nil {
+		t.Fatalf("Remove() error: %v", err)
+	}
+
+	groups := r.AllGroups()
+	if len(groups) != 1 {
+		t.Fatalf("got %d groups, want 1", len(groups))
+	}
+	if len(groups[0].EntityIDs) != 1 || groups[0].EntityIDs[0] != "light.hall" {
+		t.Fatalf("got members %v, want [light.hall] after removing light.kitchen", groups[0].EntityIDs)
+	}
+
+	// The stripped membership must be persisted, not just in memory.
+	reloaded, err := NewRegistry(path)
+	if err != nil {
+		t.Fatalf("NewRegistry() reload error: %v", err)
+	}
+	g, ok := reloaded.GroupByHueID(groups[0].HueID)
+	if !ok {
+		t.Fatal("expected the group to survive the reload")
+	}
+	if len(g.EntityIDs) != 1 || g.EntityIDs[0] != "light.hall" {
+		t.Fatalf("got members %v after reload, want [light.hall]", g.EntityIDs)
+	}
+}
