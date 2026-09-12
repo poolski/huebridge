@@ -28,7 +28,7 @@ func setupServerWithGroup(t *testing.T) (*fake.Backend, *registry.Registry) {
 
 func newTestServer(reg *registry.Registry, be backend.Backend, t *testing.T) *http.ServeMux {
 	mac := mustParseMAC("aa:bb:cc:dd:ee:ff")
-	return NewServer(reg, be, NewWhitelist(filepath.Join(t.TempDir(), "wl.json")), &PairingWindow{}, "AABBCCFFFEDDEEFF", mac, filepath.Join(t.TempDir(), "scenes.json"))
+	return NewServer(reg, be, NewWhitelist(filepath.Join(t.TempDir(), "wl.json")), &PairingWindow{}, "AABBCCFFFEDDEEFF", mac, filepath.Join(t.TempDir(), "scenes.json"), filepath.Join(t.TempDir(), "schedules.json"))
 }
 
 func TestGroups_GetOne(t *testing.T) {

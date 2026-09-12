@@ -71,3 +71,16 @@ type Scene struct {
 	Recycle     bool                       `json:"recycle"`
 	Locked      bool                       `json:"locked"`
 }
+
+type ScheduleCommand struct {
+	Address string `json:"address"`
+	Method  string `json:"method"`
+	Body    any    `json:"body"`
+}
+
+type Schedule struct {
+	Name      string          `json:"name"`
+	Command   ScheduleCommand `json:"command"`
+	LocalTime string          `json:"localtime"`
+	Status    string          `json:"status"`
+}

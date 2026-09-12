@@ -10,7 +10,7 @@ import (
 
 // NewServer assembles the CLIP v1 router. reg/be may be nil in tests that
 // only exercise pairing/config.
-func NewServer(reg *registry.Registry, be backend.Backend, wl *Whitelist, win *PairingWindow, bridgeID string, mac net.HardwareAddr, scenesPath string) *http.ServeMux {
+func NewServer(reg *registry.Registry, be backend.Backend, wl *Whitelist, win *PairingWindow, bridgeID string, mac net.HardwareAddr, scenesPath string, schedulesPath string) *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /api", handlePairing(wl, win))
 	mux.HandleFunc("GET /api/{username}/config", handleGetConfig(bridgeID, mac, win))
@@ -28,6 +28,10 @@ func NewServer(reg *registry.Registry, be backend.Backend, wl *Whitelist, win *P
 		mux.HandleFunc("GET /api/{username}/scenes/{id}", handleGetScene(scenes))
 		mux.HandleFunc("POST /api/{username}/scenes", handlePostScene(reg, be, scenes))
 		mux.HandleFunc("DELETE /api/{username}/scenes/{id}", handleDeleteScene(scenes, be))
+
+		schedules := NewScheduleStore(schedulesPath)
+		mux.HandleFunc("POST /api/{username}/schedules", handlePostSchedule(schedules))
+		mux.HandleFunc("DELETE /api/{username}/schedules/{id}", handleDeleteSchedule(schedules))
 	}
 
 	return mux

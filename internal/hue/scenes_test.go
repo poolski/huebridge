@@ -20,7 +20,7 @@ func TestScenes_CreateFromGroupCapturesCurrentState(t *testing.T) {
 	reg.Add("light.kitchen", "Kitchen")
 	reg.AddGroup("Downstairs", "Living room", []string{"light.kitchen"})
 
-	srv := NewServer(reg, be, NewWhitelist(filepath.Join(t.TempDir(), "wl.json")), &PairingWindow{}, "AABBCCFFFEDDEEFF", mustParseMAC("aa:bb:cc:dd:ee:ff"), filepath.Join(t.TempDir(), "scenes.json"))
+	srv := NewServer(reg, be, NewWhitelist(filepath.Join(t.TempDir(), "wl.json")), &PairingWindow{}, "AABBCCFFFEDDEEFF", mustParseMAC("aa:bb:cc:dd:ee:ff"), filepath.Join(t.TempDir(), "scenes.json"), filepath.Join(t.TempDir(), "schedules.json"))
 
 	req := httptest.NewRequest("POST", "/api/testuser/scenes", bytes.NewReader([]byte(`{"name":"Relax","group":"1"}`)))
 	rec := httptest.NewRecorder()
@@ -50,7 +50,7 @@ func TestScenes_DeleteRemovesMirroredScene(t *testing.T) {
 	scene, _ := scenes.Create("Relax", "1", []string{"light.kitchen"}, map[string]backend.DesiredState{})
 	be.MirrorScene(nil, scene.ID, "Relax", nil)
 
-	srv := NewServer(reg, be, NewWhitelist(filepath.Join(t.TempDir(), "wl.json")), &PairingWindow{}, "AABBCCFFFEDDEEFF", mustParseMAC("aa:bb:cc:dd:ee:ff"), scenesPath)
+	srv := NewServer(reg, be, NewWhitelist(filepath.Join(t.TempDir(), "wl.json")), &PairingWindow{}, "AABBCCFFFEDDEEFF", mustParseMAC("aa:bb:cc:dd:ee:ff"), scenesPath, filepath.Join(t.TempDir(), "schedules.json"))
 
 	req := httptest.NewRequest("DELETE", "/api/testuser/scenes/"+scene.ID, nil)
 	rec := httptest.NewRecorder()
@@ -78,7 +78,7 @@ func TestScenes_GetAllReturnsSeededScene(t *testing.T) {
 	scenes := NewSceneStore(scenesPath)
 	scene, _ := scenes.Create("Relax", "1", []string{"light.kitchen"}, map[string]backend.DesiredState{})
 
-	srv := NewServer(reg, be, NewWhitelist(filepath.Join(t.TempDir(), "wl.json")), &PairingWindow{}, "AABBCCFFFEDDEEFF", mustParseMAC("aa:bb:cc:dd:ee:ff"), scenesPath)
+	srv := NewServer(reg, be, NewWhitelist(filepath.Join(t.TempDir(), "wl.json")), &PairingWindow{}, "AABBCCFFFEDDEEFF", mustParseMAC("aa:bb:cc:dd:ee:ff"), scenesPath, filepath.Join(t.TempDir(), "schedules.json"))
 
 	req := httptest.NewRequest("GET", "/api/testuser/scenes", nil)
 	rec := httptest.NewRecorder()
@@ -105,7 +105,7 @@ func TestScenes_GetOneReturnsScene(t *testing.T) {
 	scenes := NewSceneStore(scenesPath)
 	scene, _ := scenes.Create("Relax", "1", []string{"light.kitchen"}, map[string]backend.DesiredState{})
 
-	srv := NewServer(reg, be, NewWhitelist(filepath.Join(t.TempDir(), "wl.json")), &PairingWindow{}, "AABBCCFFFEDDEEFF", mustParseMAC("aa:bb:cc:dd:ee:ff"), scenesPath)
+	srv := NewServer(reg, be, NewWhitelist(filepath.Join(t.TempDir(), "wl.json")), &PairingWindow{}, "AABBCCFFFEDDEEFF", mustParseMAC("aa:bb:cc:dd:ee:ff"), scenesPath, filepath.Join(t.TempDir(), "schedules.json"))
 
 	req := httptest.NewRequest("GET", "/api/testuser/scenes/"+scene.ID, nil)
 	rec := httptest.NewRecorder()
@@ -124,7 +124,7 @@ func TestScenes_GetOneUnknownIDReturnsError(t *testing.T) {
 	be := fake.New()
 	reg, _ := registry.NewRegistry(filepath.Join(t.TempDir(), "registry.json"))
 
-	srv := NewServer(reg, be, NewWhitelist(filepath.Join(t.TempDir(), "wl.json")), &PairingWindow{}, "AABBCCFFFEDDEEFF", mustParseMAC("aa:bb:cc:dd:ee:ff"), filepath.Join(t.TempDir(), "scenes.json"))
+	srv := NewServer(reg, be, NewWhitelist(filepath.Join(t.TempDir(), "wl.json")), &PairingWindow{}, "AABBCCFFFEDDEEFF", mustParseMAC("aa:bb:cc:dd:ee:ff"), filepath.Join(t.TempDir(), "scenes.json"), filepath.Join(t.TempDir(), "schedules.json"))
 
 	req := httptest.NewRequest("GET", "/api/testuser/scenes/does-not-exist", nil)
 	rec := httptest.NewRecorder()

@@ -24,7 +24,7 @@ func setupServerWithOneLight(t *testing.T) (*fake.Backend, *registry.Registry) {
 
 func TestLights_GetAll(t *testing.T) {
 	be, reg := setupServerWithOneLight(t)
-	srv := NewServer(reg, be, NewWhitelist(filepath.Join(t.TempDir(), "wl.json")), &PairingWindow{}, "AABBCCFFFEDDEEFF", mustParseMAC("aa:bb:cc:dd:ee:ff"), filepath.Join(t.TempDir(), "scenes.json"))
+	srv := NewServer(reg, be, NewWhitelist(filepath.Join(t.TempDir(), "wl.json")), &PairingWindow{}, "AABBCCFFFEDDEEFF", mustParseMAC("aa:bb:cc:dd:ee:ff"), filepath.Join(t.TempDir(), "scenes.json"), filepath.Join(t.TempDir(), "schedules.json"))
 
 	req := httptest.NewRequest("GET", "/api/testuser/lights", nil)
 	rec := httptest.NewRecorder()
@@ -45,7 +45,7 @@ func TestLights_GetAll(t *testing.T) {
 
 func TestLights_PutState(t *testing.T) {
 	be, reg := setupServerWithOneLight(t)
-	srv := NewServer(reg, be, NewWhitelist(filepath.Join(t.TempDir(), "wl.json")), &PairingWindow{}, "AABBCCFFFEDDEEFF", mustParseMAC("aa:bb:cc:dd:ee:ff"), filepath.Join(t.TempDir(), "scenes.json"))
+	srv := NewServer(reg, be, NewWhitelist(filepath.Join(t.TempDir(), "wl.json")), &PairingWindow{}, "AABBCCFFFEDDEEFF", mustParseMAC("aa:bb:cc:dd:ee:ff"), filepath.Join(t.TempDir(), "scenes.json"), filepath.Join(t.TempDir(), "schedules.json"))
 
 	req := httptest.NewRequest("PUT", "/api/testuser/lights/1/state", bytes.NewReader([]byte(`{"on":true,"bri":200}`)))
 	rec := httptest.NewRecorder()
@@ -65,7 +65,7 @@ func TestLights_PutState(t *testing.T) {
 
 func TestLights_PutStateUnknownID(t *testing.T) {
 	be, reg := setupServerWithOneLight(t)
-	srv := NewServer(reg, be, NewWhitelist(filepath.Join(t.TempDir(), "wl.json")), &PairingWindow{}, "AABBCCFFFEDDEEFF", mustParseMAC("aa:bb:cc:dd:ee:ff"), filepath.Join(t.TempDir(), "scenes.json"))
+	srv := NewServer(reg, be, NewWhitelist(filepath.Join(t.TempDir(), "wl.json")), &PairingWindow{}, "AABBCCFFFEDDEEFF", mustParseMAC("aa:bb:cc:dd:ee:ff"), filepath.Join(t.TempDir(), "scenes.json"), filepath.Join(t.TempDir(), "schedules.json"))
 
 	req := httptest.NewRequest("PUT", "/api/testuser/lights/99/state", bytes.NewReader([]byte(`{"on":true}`)))
 	rec := httptest.NewRecorder()
