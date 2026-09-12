@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.4
+
+- Fix pairing failing for clients that POST to `/api/` with a trailing
+  slash (e.g. Hue Essentials) — the bridge only accepted `/api`.
+- Add a delete button to remove entities from the exposed list.
+
 ## 0.1.3
 
 - Fix the bridge not appearing in the Hue app's search: its mDNS TXT record
