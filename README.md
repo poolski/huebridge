@@ -36,7 +36,7 @@ configure by hand.
 
 ## Setup
 
-huebridge has one option, set on the add-on's **Configuration** tab:
+huebridge has two options, set on the add-on's **Configuration** tab:
 
 - **`api_port`** (default `8299`) — the port the emulated Hue Bridge API,
   and its SSDP/mDNS discovery, listens on. Real Hue bridges use 443, but on
@@ -46,6 +46,10 @@ huebridge has one option, set on the add-on's **Configuration** tab:
   competing for it. The Hue app discovers whatever port is advertised, so
   there's no need to change this unless `8299` itself collides with
   something on your network.
+- **`log_level`** (default `info`) — `info` logs each request's method,
+  path, status, and duration. `debug` additionally logs request headers
+  and request/response bodies, for diagnosing what the Hue app actually
+  sent and got back.
 
 Everything else is done through its ingress panel.
 

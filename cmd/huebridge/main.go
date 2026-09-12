@@ -24,6 +24,7 @@ import (
 	"huebridge/internal/discovery"
 	"huebridge/internal/hue"
 	"huebridge/internal/ingress"
+	"huebridge/internal/logging"
 	"huebridge/internal/registry"
 	bridgetls "huebridge/internal/tls"
 )
@@ -75,6 +76,8 @@ func main() {
 		}
 	}
 	bridgePort := envIntOrDefault("HUEBRIDGE_API_PORT", defaultBridgePort)
+	logLevel := logging.ParseLevel(os.Getenv("HUEBRIDGE_LOG_LEVEL"))
+	logMiddleware := logging.Middleware(log.Default(), logLevel)
 
 	mac := lookupMAC()
 	bridgeID := bridgetls.BridgeID(mac)
@@ -144,14 +147,14 @@ func main() {
 
 	bridgeServer := &http.Server{
 		Addr:      fmt.Sprintf(":%d", bridgePort),
-		Handler:   bridgeMux,
+		Handler:   logMiddleware(bridgeMux),
 		TLSConfig: &tls.Config{Certificates: []tls.Certificate{cert}},
 	}
 	// Supervisor's ingress proxy speaks plain HTTP to the add-on, so the
 	// UI gets its own listener rather than sharing the TLS one.
 	ingressServer := &http.Server{
 		Addr:    fmt.Sprintf(":%d", ingressPort),
-		Handler: ingressHandler,
+		Handler: logMiddleware(ingressHandler),
 	}
 
 	if stopSSDP, err := discovery.StartSSDP(bridgeID, ip, bridgePort); err != nil {
@@ -178,7 +181,7 @@ func main() {
 		}
 	}()
 
-	log.Printf("huebridge starting: bridgeID=%s ip=%s api=:%d ingress=:%d", bridgeID, ip, bridgePort, ingressPort)
+	log.Printf("huebridge starting: bridgeID=%s ip=%s api=:%d ingress=:%d log_level=%s", bridgeID, ip, bridgePort, ingressPort, os.Getenv("HUEBRIDGE_LOG_LEVEL"))
 
 	select {
 	case err := <-serverErrs:

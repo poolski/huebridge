@@ -16,5 +16,7 @@ map:
   - addon_config:rw
 options:
   api_port: 8299
+  log_level: info
 schema:
   api_port: port
+  log_level: list(info|debug)
