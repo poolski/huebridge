@@ -38,6 +38,12 @@ func NewServer(reg *registry.Registry, be backend.Backend, wl *Whitelist, win *P
 	mux.HandleFunc("POST /api", handlePairing(wl, win))
 	mux.HandleFunc("POST /api/", handlePairing(wl, win))
 
+	// GET /api/config (no username at all) is the bridge-identification
+	// endpoint apps probe before pairing — "Manual bridge setup" in the
+	// Hue app hits this directly. See
+	// docs/superpowers/specs/hue-clip-v1-api-reference.md, "Config".
+	mux.HandleFunc("GET /api/config", handleGetPublicConfig(bridgeID, mac))
+
 	handle := func(pattern string, h http.HandlerFunc) {
 		mux.HandleFunc(pattern, requireUser(wl, h))
 	}
