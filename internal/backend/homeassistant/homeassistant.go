@@ -9,8 +9,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"huebridge/internal/backend"
 )
@@ -30,7 +32,9 @@ func New(baseURL, token string) *Backend {
 		baseURL: strings.TrimSuffix(baseURL, "/"),
 		token:   token,
 		wsURL:   "ws" + strings.TrimPrefix(strings.TrimSuffix(baseURL, "/"), "http") + "/api/websocket",
-		client:  &http.Client{},
+		// Without a timeout a stalled HA would wedge every request handler
+		// and the schedule ticker behind it indefinitely.
+		client: &http.Client{Timeout: 10 * time.Second},
 	}
 }
 
@@ -74,7 +78,56 @@ func toEntityState(entityID string, s haState) backend.EntityState {
 			state.Brightness = &v
 		}
 	}
+	// HA reports xy_color as a two-element list of floats and color_temp in
+	// mireds — the same units Hue uses — so both map across directly.
+	// Without these a light's colour is write-only: the app could set it
+	// but would never see it reflected back, and every light would report
+	// colormode-less "Dimmable light".
+	if raw, ok := s.Attributes["xy_color"]; ok {
+		if list, ok := raw.([]any); ok && len(list) == 2 {
+			x, xOK := list[0].(float64)
+			y, yOK := list[1].(float64)
+			if xOK && yOK {
+				xy := [2]float64{x, y}
+				state.ColorXY = &xy
+			}
+		}
+	}
+	if raw, ok := s.Attributes["color_temp"]; ok {
+		if f, ok := raw.(float64); ok && f > 0 {
+			v := uint16(f)
+			state.ColorTempMirek = &v
+		}
+	}
 	return state
+}
+
+// ListEntities returns every entity id HA currently knows about, via
+// GET /api/states.
+func (b *Backend) ListEntities(ctx context.Context) ([]string, error) {
+	resp, err := b.doJSON(ctx, http.MethodGet, "/api/states", nil)
+	if err != nil {
+		return nil, fmt.Errorf("list entities: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("list entities: unexpected status %d", resp.StatusCode)
+	}
+
+	var states []haState
+	if err := json.NewDecoder(resp.Body).Decode(&states); err != nil {
+		return nil, fmt.Errorf("decode states: %w", err)
+	}
+
+	out := make([]string, 0, len(states))
+	for _, s := range states {
+		if s.EntityID != "" {
+			out = append(out, s.EntityID)
+		}
+	}
+	sort.Strings(out)
+	return out, nil
 }
 
 func (b *Backend) GetState(ctx context.Context, entityID string) (backend.EntityState, error) {

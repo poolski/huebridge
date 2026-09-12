@@ -4,6 +4,7 @@ package fake
 import (
 	"context"
 	"fmt"
+	"sort"
 	"sync"
 
 	"huebridge/internal/backend"
@@ -79,6 +80,19 @@ func (b *Backend) Subscribe(_ context.Context) (<-chan backend.StateChange, erro
 	ch := make(chan backend.StateChange, 16)
 	b.subs = append(b.subs, ch)
 	return ch, nil
+}
+
+// ListEntities returns every seeded entity id, in sorted order so tests can
+// assert against it deterministically.
+func (b *Backend) ListEntities(_ context.Context) ([]string, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	out := make([]string, 0, len(b.states))
+	for id := range b.states {
+		out = append(out, id)
+	}
+	sort.Strings(out)
+	return out, nil
 }
 
 func (b *Backend) MirrorScene(_ context.Context, sceneID, name string, lightStates map[string]backend.DesiredState) error {

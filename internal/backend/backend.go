@@ -37,6 +37,10 @@ type Backend interface {
 	// underlying connection is permanently torn down (never expected in
 	// normal operation — callers should treat closure as fatal).
 	Subscribe(ctx context.Context) (<-chan StateChange, error)
+	// ListEntities returns every entity id the backend knows about, so the
+	// ingress UI can offer a picker rather than a blank text field. It is
+	// a discovery aid only — nothing else in the bridge depends on it.
+	ListEntities(ctx context.Context) ([]string, error)
 }
 
 // SceneMirror is implemented by backends that can mirror a Hue-app scene

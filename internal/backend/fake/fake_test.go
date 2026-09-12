@@ -62,3 +62,17 @@ func TestFakeBackend_GetStateUnknownEntity(t *testing.T) {
 		t.Fatal("expected an error for an unknown entity, got nil")
 	}
 }
+
+func TestFakeBackend_ListEntitiesReturnsSeededIDs(t *testing.T) {
+	b := New()
+	b.Seed(backend.EntityState{EntityID: "light.kitchen"})
+	b.Seed(backend.EntityState{EntityID: "light.hall"})
+
+	got, err := b.ListEntities(context.Background())
+	if err != nil {
+		t.Fatalf("ListEntities() error: %v", err)
+	}
+	if len(got) != 2 || got[0] != "light.hall" || got[1] != "light.kitchen" {
+		t.Fatalf("got %v, want [light.hall light.kitchen]", got)
+	}
+}

@@ -162,3 +162,60 @@ func TestHomeAssistantBackend_SetState_NilOnAttributeOnlyWhileOn_CallsTurnOn(t *
 		t.Fatal("turn_on service was not called, but entity was already on and had attribute changes to apply")
 	}
 }
+
+func TestToEntityState_ParsesColor(t *testing.T) {
+	got := toEntityState("light.kitchen", haState{
+		EntityID: "light.kitchen",
+		State:    "on",
+		Attributes: map[string]any{
+			"brightness": float64(200),
+			"xy_color":   []any{0.4576, 0.4099},
+			"color_temp": float64(366),
+		},
+	})
+
+	if got.ColorXY == nil || got.ColorXY[0] != 0.4576 || got.ColorXY[1] != 0.4099 {
+		t.Fatalf("got ColorXY=%v, want [0.4576 0.4099]", got.ColorXY)
+	}
+	if got.ColorTempMirek == nil || *got.ColorTempMirek != 366 {
+		t.Fatalf("got ColorTempMirek=%v, want 366", got.ColorTempMirek)
+	}
+}
+
+func TestToEntityState_IgnoresMalformedColor(t *testing.T) {
+	got := toEntityState("light.kitchen", haState{
+		State: "on",
+		Attributes: map[string]any{
+			"xy_color":   []any{0.4576},
+			"color_temp": "not a number",
+		},
+	})
+
+	if got.ColorXY != nil {
+		t.Fatalf("got ColorXY=%v, want nil for a one-element xy_color", got.ColorXY)
+	}
+	if got.ColorTempMirek != nil {
+		t.Fatalf("got ColorTempMirek=%v, want nil for a non-numeric color_temp", got.ColorTempMirek)
+	}
+}
+
+func TestHomeAssistantBackend_ListEntities(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/states", func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode([]map[string]any{
+			{"entity_id": "light.kitchen", "state": "on"},
+			{"entity_id": "light.hall", "state": "off"},
+		})
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	b := New(srv.URL, "test-token")
+	got, err := b.ListEntities(context.Background())
+	if err != nil {
+		t.Fatalf("ListEntities() error: %v", err)
+	}
+	if len(got) != 2 || got[0] != "light.hall" || got[1] != "light.kitchen" {
+		t.Fatalf("got %v, want [light.hall light.kitchen]", got)
+	}
+}
