@@ -20,13 +20,33 @@ msg_ok() { echo -e " ${GN}✓${CL} $1"; }
 msg_error() { echo -e " ${RD}✗${CL} $1" >&2; }
 
 msg_info "Configuring console auto-login"
+# Proxmox's `pct console` can land on either /dev/console
+# (console-getty.service) or the first LXC pty (container-getty@1.service,
+# auto-instantiated per container_ttys) depending on the container's
+# console configuration — override both rather than guess which one
+# applies. Each override keeps its unit's own stock ExecStart (agetty
+# uses "-" for the line argument since systemd already binds the tty via
+# TTYPath/StandardInput) and just adds --autologin root.
 mkdir -p /etc/systemd/system/console-getty.service.d
 cat >/etc/systemd/system/console-getty.service.d/override.conf <<'UNIT'
 [Service]
 ExecStart=
-ExecStart=-/sbin/agetty --autologin root --noclear --keep-baud console 115200,38400,9600 $TERM
+ExecStart=-/sbin/agetty --autologin root -o '-p -- \u' --noclear --keep-baud - 115200,38400,9600 $TERM
 UNIT
+
+mkdir -p /etc/systemd/system/container-getty@1.service.d
+cat >/etc/systemd/system/container-getty@1.service.d/override.conf <<'UNIT'
+[Service]
+ExecStart=
+ExecStart=-/sbin/agetty --autologin root -o '-p -- \u' --noclear - $TERM
+UNIT
+
 systemctl daemon-reload
+# These may already be running (started at boot, before this script does)
+# or not exist on this container's console setup at all — restart
+# whichever applies and ignore failure on the other.
+systemctl restart console-getty.service 2>/dev/null || true
+systemctl restart container-getty@1.service 2>/dev/null || true
 msg_ok "Configured console auto-login"
 
 msg_info "Installing dependencies"
