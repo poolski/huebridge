@@ -1,6 +1,8 @@
 package hue
 
 import (
+	"encoding/json"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -61,5 +63,74 @@ func TestTicker_DoesNotFireBeforeScheduledTime(t *testing.T) {
 	got, _ := be.GetState(nil, "light.kitchen")
 	if got.On {
 		t.Fatal("schedule fired before its scheduled time")
+	}
+}
+
+func TestSchedules_GetAllReturnsSeededSchedule(t *testing.T) {
+	store := NewScheduleStore(t.TempDir() + "/schedules.json")
+	sched, err := store.Create("Wake up", "/lights/1/state", "PUT", map[string]any{"on": true}, "W127/T07:00:00")
+	if err != nil {
+		t.Fatalf("Create() error: %v", err)
+	}
+
+	handler := handleGetSchedules(store)
+	req := httptest.NewRequest("GET", "/api/testuser/schedules", nil)
+	rec := httptest.NewRecorder()
+	handler(rec, req)
+
+	var body map[string]Schedule
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	got, ok := body[sched.ID]
+	if !ok {
+		t.Fatalf("got %+v, want key %q for the seeded schedule", body, sched.ID)
+	}
+	if got.Name != "Wake up" || got.LocalTime != "W127/T07:00:00" || got.Status != "enabled" {
+		t.Fatalf("got %+v, want Name=Wake up LocalTime=W127/T07:00:00 Status=enabled", got)
+	}
+	if got.Command.Address != "/lights/1/state" || got.Command.Method != "PUT" {
+		t.Fatalf("got Command=%+v, want Address=/lights/1/state Method=PUT", got.Command)
+	}
+}
+
+func TestSchedules_GetOneReturnsSchedule(t *testing.T) {
+	store := NewScheduleStore(t.TempDir() + "/schedules.json")
+	sched, err := store.Create("Wake up", "/lights/1/state", "PUT", map[string]any{"on": true}, "W127/T07:00:00")
+	if err != nil {
+		t.Fatalf("Create() error: %v", err)
+	}
+
+	handler := handleGetSchedule(store)
+	req := httptest.NewRequest("GET", "/api/testuser/schedules/"+sched.ID, nil)
+	req.SetPathValue("id", sched.ID)
+	rec := httptest.NewRecorder()
+	handler(rec, req)
+
+	var got Schedule
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.Name != "Wake up" || got.LocalTime != "W127/T07:00:00" || got.Status != "enabled" {
+		t.Fatalf("got %+v, want Name=Wake up LocalTime=W127/T07:00:00 Status=enabled", got)
+	}
+	if got.Command.Address != "/lights/1/state" || got.Command.Method != "PUT" {
+		t.Fatalf("got Command=%+v, want Address=/lights/1/state Method=PUT", got.Command)
+	}
+}
+
+func TestSchedules_GetOneUnknownIDReturnsError(t *testing.T) {
+	store := NewScheduleStore(t.TempDir() + "/schedules.json")
+
+	handler := handleGetSchedule(store)
+	req := httptest.NewRequest("GET", "/api/testuser/schedules/does-not-exist", nil)
+	req.SetPathValue("id", "does-not-exist")
+	rec := httptest.NewRecorder()
+	handler(rec, req)
+
+	var body []ErrorItem
+	json.NewDecoder(rec.Body).Decode(&body)
+	if len(body) != 1 || body[0].Error.Type != 3 {
+		t.Fatalf("got %+v, want a single type-3 (resource not available) error", body)
 	}
 }

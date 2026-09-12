@@ -30,6 +30,8 @@ func NewServer(reg *registry.Registry, be backend.Backend, wl *Whitelist, win *P
 		mux.HandleFunc("DELETE /api/{username}/scenes/{id}", handleDeleteScene(scenes, be))
 
 		schedules := NewScheduleStore(schedulesPath)
+		mux.HandleFunc("GET /api/{username}/schedules", handleGetSchedules(schedules))
+		mux.HandleFunc("GET /api/{username}/schedules/{id}", handleGetSchedule(schedules))
 		mux.HandleFunc("POST /api/{username}/schedules", handlePostSchedule(schedules))
 		mux.HandleFunc("DELETE /api/{username}/schedules/{id}", handleDeleteSchedule(schedules))
 	}

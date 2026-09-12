@@ -183,6 +183,39 @@ func (t *Ticker) resolveTargetEntity(address string) (string, bool) {
 	return "", false
 }
 
+func toSchedule(s StoredSchedule) Schedule {
+	return Schedule{
+		Name:      s.Name,
+		Command:   ScheduleCommand{Address: s.Address, Method: s.Method, Body: s.Body},
+		LocalTime: s.LocalTime,
+		Status:    s.Status,
+	}
+}
+
+func handleGetSchedules(schedules *ScheduleStore) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		out := map[string]Schedule{}
+		for _, s := range schedules.All() {
+			out[s.ID] = toSchedule(s)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(out)
+	}
+}
+
+func handleGetSchedule(schedules *ScheduleStore) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id := r.PathValue("id")
+		s, ok := schedules.Get(id)
+		if !ok {
+			WriteError(w, http.StatusOK, 3, r.URL.Path, "resource, "+r.URL.Path+", not available")
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(toSchedule(s))
+	}
+}
+
 func handlePostSchedule(schedules *ScheduleStore) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
