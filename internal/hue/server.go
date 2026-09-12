@@ -31,8 +31,12 @@ func NewServer(reg *registry.Registry, be backend.Backend, wl *Whitelist, win *P
 	mux := http.NewServeMux()
 
 	// POST /api is the pairing endpoint: it has no username yet, so it is
-	// the one route that must not sit behind requireUser.
+	// the one route that must not sit behind requireUser. Go's ServeMux
+	// treats /api and /api/ as different patterns, but real clients aren't
+	// consistent about the trailing slash (Hue Essentials always sends
+	// one), so both need to resolve here.
 	mux.HandleFunc("POST /api", handlePairing(wl, win))
+	mux.HandleFunc("POST /api/", handlePairing(wl, win))
 
 	handle := func(pattern string, h http.HandlerFunc) {
 		mux.HandleFunc(pattern, requireUser(wl, h))

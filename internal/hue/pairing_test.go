@@ -62,3 +62,25 @@ func TestPairing_SucceedsWithOpenWindow(t *testing.T) {
 		t.Fatalf("username %q was not persisted to the whitelist", username)
 	}
 }
+
+// Some clients (Hue Essentials among them) POST to /api/ with a trailing
+// slash rather than /api; a real bridge accepts both.
+func TestPairing_SucceedsWithTrailingSlash(t *testing.T) {
+	wl := NewWhitelist(filepath.Join(t.TempDir(), "whitelist.json"))
+	win := &PairingWindow{}
+	win.Open(30 * timeSecond)
+	srv := NewServer(nil, nil, wl, win, "AABBCCFFFEDDEEFF", mustParseMAC("aa:bb:cc:dd:ee:ff"), nil, nil)
+
+	req := httptest.NewRequest("POST", "/api/", bytes.NewReader([]byte(`{"devicetype":"test#app"}`)))
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != 200 {
+		t.Fatalf("got status %d, want 200", rec.Code)
+	}
+	var body []map[string]map[string]any
+	json.NewDecoder(rec.Body).Decode(&body)
+	if len(body) != 1 || body[0]["success"] == nil {
+		t.Fatalf("got %+v, want a single success entry", body)
+	}
+}
