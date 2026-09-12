@@ -3,12 +3,15 @@
 # service. Meant to be run INSIDE the container — create-lxc.sh handles
 # that. Safe to run standalone too, e.g. against an existing LXC/VM.
 #
-#   HUEBRIDGE_REPO   Git repo to build from (default: https://github.com/poolski/huebridge.git)
-#   HUEBRIDGE_REF    Git ref to build (default: main)
+#   HUEBRIDGE_REPO       Git repo to build from (default: https://github.com/poolski/huebridge.git)
+#   HUEBRIDGE_REF        Git ref to build (default: main)
+#   HUEBRIDGE_LOG_LEVEL  Log level the installed service runs with (default: info; set to
+#                        "debug" to log request/response bodies and headers while troubleshooting)
 set -euo pipefail
 
 HUEBRIDGE_REPO="${HUEBRIDGE_REPO:-https://github.com/poolski/huebridge.git}"
 HUEBRIDGE_REF="${HUEBRIDGE_REF:-main}"
+HUEBRIDGE_LOG_LEVEL="${HUEBRIDGE_LOG_LEVEL:-info}"
 
 YW="\033[33m"
 GN="\033[1;92m"
@@ -61,7 +64,7 @@ msg_ok "Built huebridge"
 
 mkdir -p /var/lib/huebridge
 
-cat >/etc/systemd/system/huebridge.service <<'UNIT'
+cat >/etc/systemd/system/huebridge.service <<UNIT
 [Unit]
 Description=huebridge (standalone)
 After=network-online.target
@@ -71,6 +74,7 @@ Wants=network-online.target
 ExecStart=/usr/local/bin/huebridge
 Environment=HUEBRIDGE_DATA_DIR=/var/lib/huebridge
 Environment=HUEBRIDGE_API_PORT=443
+Environment=HUEBRIDGE_LOG_LEVEL=$HUEBRIDGE_LOG_LEVEL
 Restart=on-failure
 RestartSec=5
 
