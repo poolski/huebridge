@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"log"
 	"net/http"
 	"strconv"
 	"sync"
@@ -165,8 +166,19 @@ func handlePostScene(reg *registry.Registry, be backend.Backend, scenes *SceneSt
 			return
 		}
 
+		// A scene that exists Hue-side with no HA counterpart defeats the
+		// point of mirroring, so a mirror failure fails the whole create:
+		// we roll the scene back out of the store and report CLIP 901,
+		// leaving the app free to retry.
 		if mirror, ok := be.(backend.SceneMirror); ok {
-			mirror.MirrorScene(r.Context(), scene.ID, scene.Name, lightStates)
+			if err := mirror.MirrorScene(r.Context(), scene.ID, scene.Name, lightStates); err != nil {
+				log.Printf("mirror scene %s (%s) into Home Assistant: %v", scene.ID, scene.Name, err)
+				if delErr := scenes.Delete(scene.ID); delErr != nil {
+					log.Printf("roll back unmirrored scene %s: %v", scene.ID, delErr)
+				}
+				WriteError(w, http.StatusOK, 901, r.URL.Path, "internal error, scene could not be mirrored to Home Assistant")
+				return
+			}
 		}
 
 		WriteSuccess(w, map[string]any{"id": scene.ID})
@@ -181,10 +193,20 @@ func handleDeleteScene(scenes *SceneStore, be backend.Backend) http.HandlerFunc 
 			return
 		}
 
+		// Unlike create, a failed mirror-delete does not fail the request:
+		// the user asked for the scene to go away, and a leftover HA scene
+		// is a smaller problem than a scene the app can't get rid of. Log
+		// it and carry on.
 		if mirror, ok := be.(backend.SceneMirror); ok {
-			mirror.DeleteMirroredScene(r.Context(), id)
+			if err := mirror.DeleteMirroredScene(r.Context(), id); err != nil {
+				log.Printf("delete mirrored scene %s from Home Assistant: %v", id, err)
+			}
 		}
-		scenes.Delete(id)
+		if err := scenes.Delete(id); err != nil {
+			log.Printf("delete scene %s: %v", id, err)
+			WriteError(w, http.StatusOK, 901, r.URL.Path, "internal error")
+			return
+		}
 
 		WriteSuccess(w, map[string]any{"id": id})
 	}

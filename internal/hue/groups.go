@@ -11,11 +11,17 @@ import (
 )
 
 func toGroup(ctx context.Context, reg *registry.Registry, be backend.Backend, g registry.Group) Group {
-	lights := make([]string, len(g.EntityIDs))
+	lights := make([]string, 0, len(g.EntityIDs))
 	allOn, anyOn := true, false
-	for i, entityID := range g.EntityIDs {
+	// The Hue app expects a group to carry an "action" describing the last
+	// state applied to it. We have no such record, so we report the first
+	// member we can read as representative — good enough for the app to
+	// render a brightness slider at a plausible position.
+	action := GroupAction{}
+	haveAction := false
+	for _, entityID := range g.EntityIDs {
 		if entry, ok := reg.ByEntityID(entityID); ok {
-			lights[i] = strconv.Itoa(entry.HueID)
+			lights = append(lights, strconv.Itoa(entry.HueID))
 		}
 		state, err := be.GetState(ctx, entityID)
 		if err == nil && state.On {
@@ -23,7 +29,14 @@ func toGroup(ctx context.Context, reg *registry.Registry, be backend.Backend, g 
 		} else if err != nil || !state.On {
 			allOn = false
 		}
+		if err == nil && !haveAction {
+			action = GroupAction{On: state.On, Bri: state.Brightness}
+			haveAction = true
+		}
 	}
+	// anyOn is the group's on/off state as far as the app is concerned;
+	// keep the action consistent with it.
+	action.On = anyOn
 	return Group{
 		Name:   g.Name,
 		Lights: lights,
@@ -33,6 +46,7 @@ func toGroup(ctx context.Context, reg *registry.Registry, be backend.Backend, g 
 			AllOn: allOn && len(g.EntityIDs) > 0,
 			AnyOn: anyOn,
 		},
+		Action: action,
 	}
 }
 
