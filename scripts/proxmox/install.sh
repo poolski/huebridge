@@ -80,5 +80,10 @@ UNIT
 
 msg_info "Starting huebridge"
 systemctl daemon-reload
-systemctl enable --now huebridge >/dev/null
+systemctl enable huebridge >/dev/null
+# `enable --now` only starts the unit if it isn't already active — on a
+# re-run against an already-running install (picking up a fix, a new
+# HUEBRIDGE_REF), that's a no-op and the old binary keeps running despite
+# just being overwritten. restart always replaces the running process.
+systemctl restart huebridge
 msg_ok "Started huebridge"
