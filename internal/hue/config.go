@@ -12,6 +12,18 @@ import (
 // docs/superpowers/specs/hue-clip-v1-api-reference.md, "Config".
 const configTimeFormat = "2006-01-02T15:04:05"
 
+// currentDatastoreVersion/currentSwVersion/currentAPIVersion match a real
+// BSB002 bridge on current firmware, confirmed against a live bridge's own
+// GET /api/<user>/config response rather than the older values in
+// hue-clip-v1-api-reference.md's example. Some clients treat an
+// old-looking version as reason to prompt a firmware push (see
+// noUpdatesAvailable).
+const (
+	currentDatastoreVersion = "197"
+	currentSwVersion        = "1978293000"
+	currentAPIVersion       = "1.78.0"
+)
+
 // noUpdatesAvailable reports the real bridge's "nothing to install" shape
 // for both the legacy and current software-update status objects. Its
 // absence has been observed causing clients to treat an update as
@@ -33,9 +45,9 @@ func handleGetPublicConfig(bridgeID string, mac net.HardwareAddr) http.HandlerFu
 	return func(w http.ResponseWriter, r *http.Request) {
 		cfg := PublicBridgeConfig{
 			Name:             "huebridge",
-			DatastoreVersion: "126",
-			SwVersion:        "1000000000",
-			APIVersion:       "1.61.0",
+			DatastoreVersion: currentDatastoreVersion,
+			SwVersion:        currentSwVersion,
+			APIVersion:       currentAPIVersion,
 			Mac:              mac.String(),
 			BridgeID:         bridgeID,
 			FactoryNew:       false,
@@ -53,7 +65,7 @@ func handleGetPublicConfig(bridgeID string, mac net.HardwareAddr) http.HandlerFu
 // the same stripped subset GET /api/config (no username at all) returns —
 // matching a real bridge, and avoiding leaking the whitelist to a caller
 // that was never actually paired.
-func handleGetConfig(bridgeID string, mac net.HardwareAddr, win *PairingWindow, wl *Whitelist) http.HandlerFunc {
+func handleGetConfig(bridgeID string, mac net.HardwareAddr, win *PairingWindow, wl *Whitelist, ip string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if _, ok := wl.Lookup(r.PathValue("username")); !ok {
 			handleGetPublicConfig(bridgeID, mac)(w, r)
@@ -65,11 +77,14 @@ func handleGetConfig(bridgeID string, mac net.HardwareAddr, win *PairingWindow, 
 			// last use date isn't tracked live (it would mean a disk write
 			// on every authenticated request, undoing the point of the
 			// state cache) — create date is a reasonable stand-in for it.
+			// lastaccesstype isn't tracked at all — "none" is what a real
+			// bridge reports for an entry it hasn't classified.
 			created := entry.CreateDate.Format(configTimeFormat)
 			whitelist[username] = ConfigWhitelistEntry{
-				CreateDate:  created,
-				LastUseDate: created,
-				Name:        entry.Name,
+				CreateDate:     created,
+				LastUseDate:    created,
+				Name:           entry.Name,
+				LastAccessType: "none",
 			}
 		}
 
@@ -77,21 +92,28 @@ func handleGetConfig(bridgeID string, mac net.HardwareAddr, win *PairingWindow, 
 		now := time.Now()
 		cfg := BridgeConfig{
 			Name:             "huebridge",
-			DatastoreVersion: "126",
-			SwVersion:        "1000000000",
-			APIVersion:       "1.61.0",
+			DatastoreVersion: currentDatastoreVersion,
+			SwVersion:        currentSwVersion,
+			APIVersion:       currentAPIVersion,
 			Mac:              mac.String(),
 			BridgeID:         bridgeID,
 			FactoryNew:       false,
 			ReplacesBridgeID: nil,
 			ModelID:          "BSB002",
+			StarterKitID:     "",
 			ZigbeeChannel:    25,
 			LinkButton:       win.IsOpen(),
 			UTC:              now.UTC().Format(configTimeFormat),
 			LocalTime:        now.Format(configTimeFormat),
-			SwUpdate:         swUpdate,
-			SwUpdate2:        swUpdate2,
-			Whitelist:        whitelist,
+			Dhcp:             true,
+			IPAddress:        ip,
+			// Deprecated since bridge firmware 1.21/1.37 — a real bridge
+			// always reports these two values now, never anything else.
+			ProxyAddress: "none",
+			ProxyPort:    0,
+			SwUpdate:     swUpdate,
+			SwUpdate2:    swUpdate2,
+			Whitelist:    whitelist,
 		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(cfg)

@@ -48,9 +48,10 @@ type Group struct {
 // space-containing JSON keys match the real bridge's wire format exactly
 // (see hue-clip-v1-api-reference.md, "Config").
 type ConfigWhitelistEntry struct {
-	CreateDate  string `json:"create date"`
-	LastUseDate string `json:"last use date"`
-	Name        string `json:"name"`
+	CreateDate     string `json:"create date"`
+	LastUseDate    string `json:"last use date"`
+	Name           string `json:"name"`
+	LastAccessType string `json:"lastaccesstype"`
 }
 
 // SwUpdateDeviceTypes and SwUpdate mirror the real bridge's legacy
@@ -103,10 +104,15 @@ type BridgeConfig struct {
 	FactoryNew       bool                            `json:"factorynew"`
 	ReplacesBridgeID *string                         `json:"replacesbridgeid"`
 	ModelID          string                          `json:"modelid"`
+	StarterKitID     string                          `json:"starterkitid"`
 	ZigbeeChannel    int                             `json:"zigbeechannel"`
 	LinkButton       bool                            `json:"linkbutton"`
 	UTC              string                          `json:"UTC"`
 	LocalTime        string                          `json:"localtime"`
+	Dhcp             bool                            `json:"dhcp"`
+	IPAddress        string                          `json:"ipaddress"`
+	ProxyAddress     string                          `json:"proxyaddress"`
+	ProxyPort        int                             `json:"proxyport"`
 	SwUpdate         SwUpdate                        `json:"swupdate"`
 	SwUpdate2        SwUpdate2                       `json:"swupdate2"`
 	Whitelist        map[string]ConfigWhitelistEntry `json:"whitelist"`

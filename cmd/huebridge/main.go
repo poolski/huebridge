@@ -245,9 +245,9 @@ func runBridge(deps bridgeDeps) {
 	scenes := hue.NewSceneStore(filepath.Join(deps.dataDir, "scenes.json"))
 	schedules := hue.NewScheduleStore(filepath.Join(deps.dataDir, "schedules.json"))
 
-	mux := hue.NewServer(reg, be, whitelist, pairingWindow, bridgeID, mac, scenes, schedules)
-
 	ip := resolveLocalIP()
+	mux := hue.NewServer(reg, be, whitelist, pairingWindow, bridgeID, mac, scenes, schedules, ip)
+
 	mux.HandleFunc("GET /description.xml", handleDescriptionXML(bridgeID, ip, deps.bridgePort))
 
 	ticker := hue.NewTicker(schedules, be, func(id int) (string, bool) {

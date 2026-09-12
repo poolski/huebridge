@@ -27,7 +27,7 @@ func requireUser(wl *Whitelist, next http.HandlerFunc) http.HandlerFunc {
 // constructed so the caller can share the same stores with the schedule
 // ticker — two stores over one file would each hold their own stale copy of
 // its contents.
-func NewServer(reg *registry.Registry, be backend.Backend, wl *Whitelist, win *PairingWindow, bridgeID string, mac net.HardwareAddr, scenes *SceneStore, schedules *ScheduleStore) *http.ServeMux {
+func NewServer(reg *registry.Registry, be backend.Backend, wl *Whitelist, win *PairingWindow, bridgeID string, mac net.HardwareAddr, scenes *SceneStore, schedules *ScheduleStore, ip string) *http.ServeMux {
 	mux := http.NewServeMux()
 
 	// POST /api is the pairing endpoint: it has no username yet, so it is
@@ -60,7 +60,7 @@ func NewServer(reg *registry.Registry, be backend.Backend, wl *Whitelist, win *P
 	// docs/superpowers/specs/hue-clip-v1-api-reference.md, "Config"). The
 	// payload we serve is already that stripped subset — no whitelist, no
 	// network details.
-	mux.HandleFunc("GET /api/{username}/config", handleGetConfig(bridgeID, mac, win, wl))
+	mux.HandleFunc("GET /api/{username}/config", handleGetConfig(bridgeID, mac, win, wl, ip))
 
 	if reg != nil && be != nil {
 		handle("GET /api/{username}/lights", handleGetLights(reg, be))

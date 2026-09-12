@@ -34,7 +34,7 @@ func newAuthedServer(t *testing.T, reg *registry.Registry, be backend.Backend, s
 	if err := wl.Add(WhitelistEntry{Username: testUser, Name: "test#app", CreateDate: time.Now()}); err != nil {
 		t.Fatalf("seed whitelist: %v", err)
 	}
-	return NewServer(reg, be, wl, &PairingWindow{}, "AABBCCFFFEDDEEFF", mustParseMAC("aa:bb:cc:dd:ee:ff"), scenes, schedules)
+	return NewServer(reg, be, wl, &PairingWindow{}, "AABBCCFFFEDDEEFF", mustParseMAC("aa:bb:cc:dd:ee:ff"), scenes, schedules, "192.168.1.100")
 }
 
 func TestAuth_UnknownUsernameIsRejected(t *testing.T) {
@@ -65,7 +65,7 @@ func TestAuth_PairedUsernameIsAccepted(t *testing.T) {
 	win.Open(30 * timeSecond)
 	srv := NewServer(reg, be, wl, win, "AABBCCFFFEDDEEFF", mustParseMAC("aa:bb:cc:dd:ee:ff"),
 		NewSceneStore(filepath.Join(t.TempDir(), "scenes.json")),
-		NewScheduleStore(filepath.Join(t.TempDir(), "schedules.json")))
+		NewScheduleStore(filepath.Join(t.TempDir(), "schedules.json")), "192.168.1.100")
 
 	// Pair first, then use the username the bridge handed back.
 	pairReq := httptest.NewRequest("POST", "/api", strings.NewReader(`{"devicetype":"test#app"}`))
@@ -130,7 +130,7 @@ func TestServer_SharesScheduleStoreWithCaller(t *testing.T) {
 // huebridge has nothing to install; this just must not 404.
 func TestServer_UpdaterAcceptsPushedFirmware(t *testing.T) {
 	wl := NewWhitelist(filepath.Join(t.TempDir(), "wl.json"))
-	srv := NewServer(nil, nil, wl, &PairingWindow{}, "AABBCCFFFEDDEEFF", mustParseMAC("aa:bb:cc:dd:ee:ff"), nil, nil)
+	srv := NewServer(nil, nil, wl, &PairingWindow{}, "AABBCCFFFEDDEEFF", mustParseMAC("aa:bb:cc:dd:ee:ff"), nil, nil, "192.168.1.100")
 
 	req := httptest.NewRequest("POST", "/updater", strings.NewReader("BSB002"))
 	rec := httptest.NewRecorder()
