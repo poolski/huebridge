@@ -1,18 +1,15 @@
 package discovery
 
 import (
-	"net"
 	"testing"
 )
 
 func TestSSDPLocationURL(t *testing.T) {
-	mac, _ := net.ParseMAC("aa:bb:cc:dd:ee:ff")
 	got := ssdpLocationURL("192.168.1.50", 443)
 	want := "https://192.168.1.50:443/description.xml"
 	if got != want {
 		t.Fatalf("got %q, want %q", got, want)
 	}
-	_ = mac
 }
 
 func TestSSDPUSN(t *testing.T) {

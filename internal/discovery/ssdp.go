@@ -4,8 +4,8 @@ package discovery
 
 import (
 	"fmt"
-	"net"
 	"strings"
+	"time"
 
 	"github.com/koron/go-ssdp"
 )
@@ -35,18 +35,25 @@ func StartSSDP(bridgeID string, localIP string, httpsPort int) (stop func(), err
 		return nil, fmt.Errorf("start SSDP advertiser: %w", err)
 	}
 
+	stopCh := make(chan struct{})
 	go func() {
+		ticker := time.NewTicker(900 * time.Second)
+		defer ticker.Stop()
 		for {
-			if err := ad.Alive(); err != nil {
+			select {
+			case <-stopCh:
 				return
+			case <-ticker.C:
+				if err := ad.Alive(); err != nil {
+					return
+				}
 			}
 		}
 	}()
 
 	return func() {
+		close(stopCh)
 		ad.Bye()
 		ad.Close()
 	}, nil
 }
-
-var _ net.IP // keep net import available for future IP validation
