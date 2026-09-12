@@ -8,6 +8,6 @@ RUN CGO_ENABLED=0 go build -o /huebridge ./cmd/huebridge
 
 FROM ${BUILD_FROM}
 COPY --from=build /huebridge /usr/bin/huebridge
-COPY addon/run.sh /run.sh
+COPY run.sh /run.sh
 RUN chmod a+x /run.sh
 CMD ["/run.sh"]
