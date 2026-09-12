@@ -2,6 +2,7 @@ package discovery
 
 import (
 	"fmt"
+	"net"
 
 	"github.com/hashicorp/mdns"
 )
@@ -20,14 +21,20 @@ func mdnsTXTRecords(bridgeID string) []string {
 // StartMDNS advertises huebridge over mDNS (_hue._tcp), the second
 // discovery path Signify's own docs list alongside SSDP. Returns a stop
 // function to call on shutdown.
-func StartMDNS(bridgeID string, httpsPort int) (stop func(), err error) {
+//
+// localIP is passed explicitly rather than left for the library to work
+// out via the container's own hostname: NewMDNSService falls back to
+// net.LookupIP(os.Hostname()) when given no IPs, which fails inside a
+// plain (non-host-network) Docker container — nothing resolves a random
+// container ID like "d546ca67ced4" to its own address.
+func StartMDNS(bridgeID string, localIP string, httpsPort int) (stop func(), err error) {
 	info := mdnsTXTRecords(bridgeID)
 	service, err := mdns.NewMDNSService(
 		mdnsInstanceName(bridgeID),
 		"_hue._tcp",
 		"", "",
 		httpsPort,
-		nil,
+		[]net.IP{net.ParseIP(localIP)},
 		info,
 	)
 	if err != nil {

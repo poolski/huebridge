@@ -42,3 +42,19 @@ changes take effect immediately, no restart needed.
 - Discovery relies on broadcast traffic, so the Hue app/speaker must be on
   the same network segment as Home Assistant (no VLANs or guest networks in
   between).
+
+## Standalone mode
+
+huebridge can run without Home Assistant's Supervisor — on separate hardware,
+or against Home Assistant Core without the Supervisor. It automatically enters
+standalone mode when `SUPERVISOR_TOKEN` is not set.
+
+See the [Running standalone](README.md#running-standalone) section in the
+README for installation and setup instructions.
+
+| Environment Variable | Default | Description |
+| -------------------- | ------- | ----------- |
+| `HUEBRIDGE_API_PORT` | `8299` | Port for the emulated Hue Bridge API and SSDP/mDNS discovery. |
+| `HUEBRIDGE_ADMIN_PORT` | `8300` | Port for the setup wizard and entity-picker UI (HTTPS with self-signed cert). |
+| `HUEBRIDGE_DATA_DIR` | `/data` | Directory for configuration, entity registry, and scenes/schedules. |
+| `HUEBRIDGE_LOG_LEVEL` | `info` | Log level: `info` for request summaries, `debug` for detailed request/response logging. |

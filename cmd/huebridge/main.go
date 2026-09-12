@@ -1,6 +1,8 @@
 // Command huebridge runs the Hue Bridge emulator: CLIP v1 HTTP API, SSDP +
-// mDNS discovery, and the ingress web UI, all backed by a Home Assistant
-// instance reached over REST + WebSocket.
+// mDNS discovery, and an admin/entity-picker web UI, backed by a Home
+// Assistant instance reached over REST + WebSocket. It runs either as a
+// Home Assistant Supervisor add-on (SUPERVISOR_TOKEN set) or standalone,
+// configured through its own setup wizard (see isStandalone).
 package main
 
 import (
@@ -26,6 +28,7 @@ import (
 	"huebridge/internal/ingress"
 	"huebridge/internal/logging"
 	"huebridge/internal/registry"
+	"huebridge/internal/setup"
 	bridgetls "huebridge/internal/tls"
 )
 
@@ -33,14 +36,18 @@ const (
 	// defaultBridgePort is used when HUEBRIDGE_API_PORT isn't set. The real
 	// Hue app conventionally expects the bridge on 443, but that's often
 	// already taken by another host_network add-on (a reverse proxy, an SSL
-	// terminator, ...), so the add-on's api_port option lets a user free
-	// that up on their own terms rather than huebridge claiming it outright.
+	// terminator, ...), so the api_port option lets a user free that up on
+	// their own terms rather than huebridge claiming it outright.
 	defaultBridgePort = 8299
 
 	// defaultIngressPort is used if Supervisor can't be asked which port it
 	// assigned (see fetchIngressPort) — ingress won't work, but the rest of
 	// the bridge still can.
 	defaultIngressPort = 8298
+
+	// defaultAdminPort is standalone mode's setup-wizard/entity-picker port
+	// — there's no Supervisor ingress proxy to assign one dynamically.
+	defaultAdminPort = 8300
 
 	tickTimeout          = 30 * time.Second
 	shutdownTimeout      = 10 * time.Second
@@ -57,6 +64,20 @@ func mustEnv(key string) string {
 
 func main() {
 	dataDir := envOrDefault("HUEBRIDGE_DATA_DIR", "/data")
+	bridgePort := envIntOrDefault("HUEBRIDGE_API_PORT", defaultBridgePort)
+	logLevel := logging.ParseLevel(os.Getenv("HUEBRIDGE_LOG_LEVEL"))
+
+	if isStandalone(os.Getenv) {
+		runStandalone(dataDir, bridgePort, logLevel)
+		return
+	}
+	runAddon(dataDir, bridgePort, logLevel)
+}
+
+// runAddon is huebridge's original entry point: Supervisor supplies the HA
+// URL/token via env vars and the ingress port via its API, and its ingress
+// proxy already authenticates access to the admin UI, so it's served bare.
+func runAddon(dataDir string, bridgePort int, logLevel logging.Level) {
 	haURL := mustEnv("HUEBRIDGE_HA_URL")
 	haToken := mustEnv("SUPERVISOR_TOKEN")
 
@@ -75,18 +96,130 @@ func main() {
 			ingressPort = port
 		}
 	}
-	bridgePort := envIntOrDefault("HUEBRIDGE_API_PORT", defaultBridgePort)
-	logLevel := logging.ParseLevel(os.Getenv("HUEBRIDGE_LOG_LEVEL"))
-	logMiddleware := logging.Middleware(log.Default(), logLevel)
+
+	runBridge(bridgeDeps{
+		dataDir:    dataDir,
+		haURL:      haURL,
+		haToken:    haToken,
+		bridgePort: bridgePort,
+		adminPort:  ingressPort,
+		adminTLS:   false,
+		wrapAdmin:  func(h http.Handler) http.Handler { return h },
+		logLevel:   logLevel,
+	})
+}
+
+// runStandalone is the new entry point for running without Supervisor. It
+// loads (or, on first run, collects via the setup wizard) the HA URL/token
+// and admin password, then serves the same bridge runAddon does, except
+// the admin UI gets its own TLS listener and HTTP Basic Auth since there's
+// no Supervisor ingress proxy providing either.
+func runStandalone(dataDir string, bridgePort int, logLevel logging.Level) {
+	adminPort := envIntOrDefault("HUEBRIDGE_ADMIN_PORT", defaultAdminPort)
+	cfgStore := setup.NewStore(filepath.Join(dataDir, "standalone.json"))
+
+	cfg, err := cfgStore.Load()
+	if err != nil {
+		log.Fatalf("load standalone config: %v", err)
+	}
+	if !cfg.Complete() {
+		cfg = runSetupWizard(cfgStore, adminPort)
+	}
+
+	runBridge(bridgeDeps{
+		dataDir:    dataDir,
+		haURL:      cfg.HAURL,
+		haToken:    cfg.HAToken,
+		bridgePort: bridgePort,
+		adminPort:  adminPort,
+		adminTLS:   true,
+		wrapAdmin: func(h http.Handler) http.Handler {
+			return setup.RequireAdmin(h, func() []byte { return cfg.AdminPasswordHash })
+		},
+		logLevel: logLevel,
+	})
+}
+
+// runSetupWizard blocks, serving the first-run setup UI over HTTPS on
+// adminPort, until a working config has been collected and persisted. The
+// wizard's own cert is throwaway — bridgeID only needs to be stable once
+// runBridge starts, not during setup.
+func runSetupWizard(cfgStore *setup.Store, adminPort int) setup.Config {
+	mac := lookupMAC()
+	cert, err := bridgetls.GenerateCertificate(bridgetls.BridgeID(mac))
+	if err != nil {
+		log.Fatalf("generate setup wizard certificate: %v", err)
+	}
+
+	wizard := setup.NewWizard(cfgStore, discovery.DiscoverHomeAssistant)
+	server := &http.Server{
+		Addr:      fmt.Sprintf(":%d", adminPort),
+		Handler:   wizard.Handler(),
+		TLSConfig: &tls.Config{Certificates: []tls.Certificate{cert}},
+	}
+
+	go func() {
+		if err := server.ListenAndServeTLS("", ""); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Fatalf("setup wizard server: %v", err)
+		}
+	}()
+
+	log.Printf("huebridge is not configured yet — open https://<this host>:%d/ to set it up", adminPort)
+	<-wizard.Done()
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+	defer cancel()
+	if err := server.Shutdown(shutdownCtx); err != nil {
+		log.Printf("shut down setup wizard server: %v", err)
+	}
+
+	cfg, err := cfgStore.Load()
+	if err != nil {
+		log.Fatalf("reload standalone config after setup: %v", err)
+	}
+	// Belt-and-suspenders: the wizard should never signal Done() without
+	// having persisted a complete config (see handleHASubmit's own
+	// validation), but if it ever did, starting the bridge with an empty
+	// HA token would fail silently and, since the file now exists, the
+	// wizard would never run again to let the operator recover. Fail loud
+	// instead.
+	if !cfg.Complete() {
+		log.Fatalf("setup wizard completed but produced an incomplete config — this should not happen")
+	}
+	return cfg
+}
+
+// bridgeDeps is what runBridge needs to serve the bridge, gathered
+// differently by runAddon and runStandalone.
+type bridgeDeps struct {
+	dataDir    string
+	haURL      string
+	haToken    string
+	bridgePort int
+	adminPort  int
+	// adminTLS selects whether the admin server terminates TLS itself
+	// (standalone, no proxy in front of it) or speaks plain HTTP
+	// (add-on, where Supervisor's ingress proxy terminates TLS upstream).
+	adminTLS  bool
+	wrapAdmin func(http.Handler) http.Handler
+	logLevel  logging.Level
+}
+
+// runBridge wires up and serves the Hue bridge: backend, Hue CLIP v1 API,
+// SSDP/mDNS advertising, and the admin/entity-picker UI. Shared by both
+// entry points, which differ only in how they obtain deps. Blocks until
+// shutdown.
+func runBridge(deps bridgeDeps) {
+	logMiddleware := logging.Middleware(log.Default(), deps.logLevel)
 
 	mac := lookupMAC()
 	bridgeID := bridgetls.BridgeID(mac)
 
-	reg, err := registry.NewRegistry(filepath.Join(dataDir, "registry.json"))
+	reg, err := registry.NewRegistry(filepath.Join(deps.dataDir, "registry.json"))
 	if err != nil {
 		log.Fatalf("load registry: %v", err)
 	}
-	whitelist := hue.NewWhitelist(filepath.Join(dataDir, "whitelist.json"))
+	whitelist := hue.NewWhitelist(filepath.Join(deps.dataDir, "whitelist.json"))
 	pairingWindow := &hue.PairingWindow{}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -95,20 +228,20 @@ func main() {
 	// The Hue app polls /lights about once a second; the cache turns those
 	// polls into reads of a WebSocket-fed snapshot instead of a REST call
 	// per entity per poll.
-	be := cache.New(homeassistant.New(haURL, haToken))
+	be := cache.New(homeassistant.New(deps.haURL, deps.haToken))
 	go be.Run(ctx)
 
 	// Scene and schedule stores are constructed once here and shared with
 	// both the HTTP handlers and the ticker — two stores over one file each
 	// keep their own copy of its contents and silently overwrite each
 	// other.
-	scenes := hue.NewSceneStore(filepath.Join(dataDir, "scenes.json"))
-	schedules := hue.NewScheduleStore(filepath.Join(dataDir, "schedules.json"))
+	scenes := hue.NewSceneStore(filepath.Join(deps.dataDir, "scenes.json"))
+	schedules := hue.NewScheduleStore(filepath.Join(deps.dataDir, "schedules.json"))
 
 	mux := hue.NewServer(reg, be, whitelist, pairingWindow, bridgeID, mac, scenes, schedules)
 
 	ip := resolveLocalIP()
-	mux.HandleFunc("GET /description.xml", handleDescriptionXML(bridgeID, ip, bridgePort))
+	mux.HandleFunc("GET /description.xml", handleDescriptionXML(bridgeID, ip, deps.bridgePort))
 
 	ticker := hue.NewTicker(schedules, be, func(id int) (string, bool) {
 		e, ok := reg.ByHueID(id)
@@ -121,7 +254,7 @@ func main() {
 		defer cancel()
 		entities, err := be.ListEntities(listCtx)
 		if err != nil {
-			log.Printf("list Home Assistant entities for the ingress picker: %v", err)
+			log.Printf("list Home Assistant entities for the admin picker: %v", err)
 			return nil
 		}
 		// The Hue bridge this add-on emulates only understands lights, so
@@ -137,7 +270,7 @@ func main() {
 	})
 
 	bridgeMux := http.NewServeMux()
-	bridgeMux.Handle("/ingress/", http.StripPrefix("/ingress", ingressHandler))
+	bridgeMux.Handle("/ingress/", deps.wrapAdmin(http.StripPrefix("/ingress", ingressHandler)))
 	bridgeMux.Handle("/", mux)
 
 	cert, err := bridgetls.GenerateCertificate(bridgeID)
@@ -146,24 +279,25 @@ func main() {
 	}
 
 	bridgeServer := &http.Server{
-		Addr:      fmt.Sprintf(":%d", bridgePort),
+		Addr:      fmt.Sprintf(":%d", deps.bridgePort),
 		Handler:   logMiddleware(bridgeMux),
 		TLSConfig: &tls.Config{Certificates: []tls.Certificate{cert}},
 	}
-	// Supervisor's ingress proxy speaks plain HTTP to the add-on, so the
-	// UI gets its own listener rather than sharing the TLS one.
-	ingressServer := &http.Server{
-		Addr:    fmt.Sprintf(":%d", ingressPort),
-		Handler: logMiddleware(ingressHandler),
+	adminServer := &http.Server{
+		Addr:    fmt.Sprintf(":%d", deps.adminPort),
+		Handler: logMiddleware(deps.wrapAdmin(ingressHandler)),
+	}
+	if deps.adminTLS {
+		adminServer.TLSConfig = &tls.Config{Certificates: []tls.Certificate{cert}}
 	}
 
-	if stopSSDP, err := discovery.StartSSDP(bridgeID, ip, bridgePort); err != nil {
+	if stopSSDP, err := discovery.StartSSDP(bridgeID, ip, deps.bridgePort); err != nil {
 		log.Printf("warning: SSDP discovery did not start: %v", err)
 	} else {
 		defer stopSSDP()
 	}
 
-	if stopMDNS, err := discovery.StartMDNS(bridgeID, bridgePort); err != nil {
+	if stopMDNS, err := discovery.StartMDNS(bridgeID, ip, deps.bridgePort); err != nil {
 		log.Printf("warning: mDNS discovery did not start: %v", err)
 	} else {
 		defer stopMDNS()
@@ -172,16 +306,22 @@ func main() {
 	serverErrs := make(chan error, 2)
 	go func() {
 		if err := bridgeServer.ListenAndServeTLS("", ""); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			serverErrs <- fmt.Errorf("bind bridge port %d (change the api_port add-on option if something else on the host already uses it): %w", bridgePort, err)
+			serverErrs <- fmt.Errorf("bind bridge port %d (change the api_port add-on option if something else on the host already uses it): %w", deps.bridgePort, err)
 		}
 	}()
 	go func() {
-		if err := ingressServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		var err error
+		if deps.adminTLS {
+			err = adminServer.ListenAndServeTLS("", "")
+		} else {
+			err = adminServer.ListenAndServe()
+		}
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
 			serverErrs <- err
 		}
 	}()
 
-	log.Printf("huebridge starting: bridgeID=%s ip=%s api=:%d ingress=:%d log_level=%s", bridgeID, ip, bridgePort, ingressPort, os.Getenv("HUEBRIDGE_LOG_LEVEL"))
+	log.Printf("huebridge starting: bridgeID=%s ip=%s api=:%d admin=:%d log_level=%s", bridgeID, ip, deps.bridgePort, deps.adminPort, os.Getenv("HUEBRIDGE_LOG_LEVEL"))
 
 	select {
 	case err := <-serverErrs:
@@ -199,8 +339,8 @@ func main() {
 	if err := bridgeServer.Shutdown(shutdownCtx); err != nil {
 		log.Printf("shut down api server: %v", err)
 	}
-	if err := ingressServer.Shutdown(shutdownCtx); err != nil {
-		log.Printf("shut down ingress server: %v", err)
+	if err := adminServer.Shutdown(shutdownCtx); err != nil {
+		log.Printf("shut down admin server: %v", err)
 	}
 	// The deferred stopSSDP/stopMDNS run from here, which the previous
 	// log.Fatal(ListenAndServeTLS(...)) skipped entirely.
