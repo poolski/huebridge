@@ -20,36 +20,20 @@ msg_ok() { echo -e " ${GN}✓${CL} $1"; }
 msg_error() { echo -e " ${RD}✗${CL} $1" >&2; }
 
 msg_info "Configuring console auto-login"
-# Proxmox's `pct console` can land on either /dev/console
-# (console-getty.service) or the first LXC pty (container-getty@1.service,
-# auto-instantiated per container_ttys) depending on the container's
-# console configuration — override both rather than guess which one
-# applies. Each override keeps its unit's own stock device-handling
-# arguments (agetty uses "-" for the line argument since systemd already
-# binds the tty via TTYPath/StandardInput) and adds --autologin root,
-# which on its own already appends "-f root" to login(1) to skip
-# authentication (see agetty(8)) — no -o/--login-options needed, and
-# combining the two is what caused the still-prompting password bug.
-mkdir -p /etc/systemd/system/console-getty.service.d
-cat >/etc/systemd/system/console-getty.service.d/override.conf <<'UNIT'
-[Service]
-ExecStart=
-ExecStart=-/sbin/agetty --autologin root --noclear --keep-baud - 115200,38400,9600 $TERM
-UNIT
-
+# Matches the Proxmox VE Community Scripts' own customize() in
+# misc/install.func exactly (container-getty@1.service, "tty%I" as the
+# agetty line argument, not the stock unit's pts-based "-") — verified
+# against their actual source rather than guessed from agetty(8), after
+# an earlier console-getty.service-based attempt didn't work in practice.
 mkdir -p /etc/systemd/system/container-getty@1.service.d
 cat >/etc/systemd/system/container-getty@1.service.d/override.conf <<'UNIT'
 [Service]
 ExecStart=
-ExecStart=-/sbin/agetty --autologin root --noclear - $TERM
+ExecStart=-/sbin/agetty --autologin root --noclear --keep-baud tty%I 115200,38400,9600 $TERM
 UNIT
 
 systemctl daemon-reload
-# These may already be running (started at boot, before this script does)
-# or not exist on this container's console setup at all — restart
-# whichever applies and ignore failure on the other.
-systemctl restart console-getty.service 2>/dev/null || true
-systemctl restart container-getty@1.service 2>/dev/null || true
+systemctl restart container-getty@1.service
 msg_ok "Configured console auto-login"
 
 msg_info "Installing dependencies"
