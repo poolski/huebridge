@@ -73,6 +73,38 @@ changes take effect immediately, no restart needed.
 - **App doesn't find the bridge**: confirm the add-on is running and that
   your phone/speaker is on the same network as Home Assistant (SSDP/mDNS
   don't cross VLANs or most guest networks).
+- **Third-party apps (e.g. Hue Essentials) don't find the bridge, or fail
+  to pair**: these generally respect the port SSDP/mDNS advertise, so
+  `api_port` alone should work. Set `log_level: debug` and check the
+  add-on's logs for the incoming request — it shows exactly what the app
+  sent and what huebridge replied.
+- **The official Hue app never finds the bridge, and no request for it
+  ever shows up in the logs at all**: the official app's local search
+  doesn't follow the SSDP-advertised port — it only probes the
+  conventional bridge ports, 80 and 443. If those are already in use on
+  your Home Assistant host (a reverse proxy, HA's own web server, ...),
+  huebridge can't bind them via `api_port`, and the official app will
+  never even attempt a connection to whatever port it's actually on.
+  There's no fix inside huebridge for this; if something like [Nginx
+  Proxy Manager](https://github.com/hassio-addons/app-nginx-proxy-manager)
+  already owns 80/443 on the host, you can forward the relevant paths to
+  huebridge instead of freeing the port outright:
+  1. In NPM, open **Hosts → Proxy Hosts** and find whichever proxy host
+     answers to your Home Assistant host's bare IP on port 443/80 (check
+     **Settings → Default Site** if you're not sure which one that is).
+  2. Edit that host, go to the **Custom locations** tab, and add a
+     location for `/api` — Scheme `https`, Forward Hostname/IP your HA
+     host's IP, Forward Port `api_port` (`8299` by default).
+  3. Repeat for `/description.xml`.
+  4. huebridge's certificate is self-signed, so proxying to it over
+     HTTPS needs upstream cert verification disabled — NPM's SSL tab
+     usually has a toggle for this, or add `proxy_ssl_verify off;` under
+     **Advanced**. Plain `http://` won't work since huebridge only
+     serves TLS.
+
+  Without this, third-party apps that respect the SSDP port (Hue
+  Essentials and similar) are the practical way to use huebridge on a
+  host where 80/443 are already spoken for.
 - **"Press the link button" never succeeds**: you need to click **Allow
   pairing** in the ingress UI *before* (or while) the app is trying — the
   window is time-limited.
