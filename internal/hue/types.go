@@ -23,6 +23,25 @@ type Light struct {
 	SwVersion        string     `json:"swversion"`
 }
 
+type GroupState struct {
+	AllOn bool `json:"all_on"`
+	AnyOn bool `json:"any_on"`
+}
+
+type GroupAction struct {
+	On  bool   `json:"on"`
+	Bri *uint8 `json:"bri,omitempty"`
+}
+
+type Group struct {
+	Name       string      `json:"name"`
+	Lights     []string    `json:"lights"`
+	Type       string      `json:"type"`
+	Class      string      `json:"class"`
+	GroupState GroupState  `json:"state"`
+	Action     GroupAction `json:"action"`
+}
+
 type BridgeConfig struct {
 	Name             string `json:"name"`
 	DatastoreVersion string `json:"datastoreversion"`

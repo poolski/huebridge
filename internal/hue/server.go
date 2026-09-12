@@ -19,6 +19,9 @@ func NewServer(reg *registry.Registry, be backend.Backend, wl *Whitelist, win *P
 		mux.HandleFunc("GET /api/{username}/lights", handleGetLights(reg, be))
 		mux.HandleFunc("GET /api/{username}/lights/{id}", handleGetLight(reg, be))
 		mux.HandleFunc("PUT /api/{username}/lights/{id}/state", handlePutLightState(reg, be))
+		mux.HandleFunc("GET /api/{username}/groups", handleGetGroups(reg, be))
+		mux.HandleFunc("GET /api/{username}/groups/{id}", handleGetGroup(reg, be))
+		mux.HandleFunc("PUT /api/{username}/groups/{id}/action", handlePutGroupAction(reg, be))
 	}
 
 	return mux

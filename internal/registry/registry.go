@@ -17,9 +17,18 @@ type Entry struct {
 	Name     string `json:"name"`
 }
 
+type Group struct {
+	HueID     int      `json:"hue_id"`
+	Name      string   `json:"name"`
+	Class     string   `json:"class"`
+	EntityIDs []string `json:"entity_ids"`
+}
+
 type fileFormat struct {
-	NextID  int     `json:"next_id"`
-	Entries []Entry `json:"entries"`
+	NextID      int     `json:"next_id"`
+	Entries     []Entry `json:"entries"`
+	NextGroupID int     `json:"next_group_id"`
+	Groups      []Group `json:"groups"`
 }
 
 type Registry struct {
@@ -30,7 +39,7 @@ type Registry struct {
 
 func NewRegistry(path string) (*Registry, error) {
 	file := store.NewJSONFile[fileFormat](path)
-	state, err := file.Load(fileFormat{NextID: 1})
+	state, err := file.Load(fileFormat{NextID: 1, NextGroupID: 1})
 	if err != nil {
 		return nil, fmt.Errorf("load registry: %w", err)
 	}
@@ -117,4 +126,41 @@ func (r *Registry) All() []Entry {
 	out := make([]Entry, len(r.state.Entries))
 	copy(out, r.state.Entries)
 	return out
+}
+
+func (r *Registry) AddGroup(name, class string, entityIDs []string) (Group, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.state.NextGroupID == 0 {
+		r.state.NextGroupID = 1
+	}
+
+	g := Group{HueID: r.state.NextGroupID, Name: name, Class: class, EntityIDs: entityIDs}
+	r.state.NextGroupID++
+	r.state.Groups = append(r.state.Groups, g)
+
+	if err := r.file.Save(r.state); err != nil {
+		return Group{}, fmt.Errorf("save registry: %w", err)
+	}
+	return g, nil
+}
+
+func (r *Registry) AllGroups() []Group {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make([]Group, len(r.state.Groups))
+	copy(out, r.state.Groups)
+	return out
+}
+
+func (r *Registry) GroupByHueID(id int) (Group, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, g := range r.state.Groups {
+		if g.HueID == id {
+			return g, true
+		}
+	}
+	return Group{}, false
 }
