@@ -49,6 +49,13 @@ const (
 	// — there's no Supervisor ingress proxy to assign one dynamically.
 	defaultAdminPort = 8300
 
+	// plainHTTPPort is fixed, not configurable: real Hue bridges serve the
+	// CLIP API over plain HTTP on 80 as well as HTTPS, and the official
+	// app's pairing flow depends on exactly that port — it isn't something
+	// a user picks. Best-effort, like SSDP/mDNS: this commonly fails when
+	// something else already owns 80 on a shared host.
+	plainHTTPPort = 80
+
 	tickTimeout          = 30 * time.Second
 	shutdownTimeout      = 10 * time.Second
 	supervisorAPITimeout = 10 * time.Second
@@ -296,6 +303,19 @@ func runBridge(deps bridgeDeps) {
 		adminServer.TLSConfig = &tls.Config{Certificates: []tls.Certificate{cert}}
 	}
 
+	// The Hue CLIP API only — not bridgeMux's /ingress/ admin route, which
+	// carries Basic Auth credentials in standalone mode that must never go
+	// out over plaintext.
+	plainHTTPServer := &http.Server{
+		Addr:    fmt.Sprintf(":%d", plainHTTPPort),
+		Handler: logMiddleware(mux),
+	}
+	plainHTTPListener, err := net.Listen("tcp", plainHTTPServer.Addr)
+	if err != nil {
+		log.Printf("warning: plain HTTP on port %d did not start (needed for the official Hue app's pairing flow, not for third-party apps that follow the SSDP-advertised port): %v", plainHTTPPort, err)
+		plainHTTPListener = nil
+	}
+
 	if stopSSDP, err := discovery.StartSSDP(bridgeID, ip, deps.bridgePort); err != nil {
 		log.Printf("warning: SSDP discovery did not start: %v", err)
 	} else {
@@ -308,12 +328,19 @@ func runBridge(deps bridgeDeps) {
 		defer stopMDNS()
 	}
 
-	serverErrs := make(chan error, 2)
+	serverErrs := make(chan error, 3)
 	go func() {
 		if err := bridgeServer.ListenAndServeTLS("", ""); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			serverErrs <- fmt.Errorf("bind bridge port %d (change the api_port add-on option if something else on the host already uses it): %w", deps.bridgePort, err)
 		}
 	}()
+	if plainHTTPListener != nil {
+		go func() {
+			if err := plainHTTPServer.Serve(plainHTTPListener); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				serverErrs <- err
+			}
+		}()
+	}
 	go func() {
 		var err error
 		if deps.adminTLS {
@@ -346,6 +373,11 @@ func runBridge(deps bridgeDeps) {
 	}
 	if err := adminServer.Shutdown(shutdownCtx); err != nil {
 		log.Printf("shut down admin server: %v", err)
+	}
+	if plainHTTPListener != nil {
+		if err := plainHTTPServer.Shutdown(shutdownCtx); err != nil {
+			log.Printf("shut down plain http server: %v", err)
+		}
 	}
 	// The deferred stopSSDP/stopMDNS run from here, which the previous
 	// log.Fatal(ListenAndServeTLS(...)) skipped entirely.
