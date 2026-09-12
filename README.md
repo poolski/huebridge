@@ -85,26 +85,24 @@ changes take effect immediately, no restart needed.
   your Home Assistant host (a reverse proxy, HA's own web server, ...),
   huebridge can't bind them via `api_port`, and the official app will
   never even attempt a connection to whatever port it's actually on.
-  There's no fix inside huebridge for this; if something like [Nginx
-  Proxy Manager](https://github.com/hassio-addons/app-nginx-proxy-manager)
-  already owns 80/443 on the host, you can forward the relevant paths to
-  huebridge instead of freeing the port outright:
-  1. In NPM, open **Hosts → Proxy Hosts** and find whichever proxy host
-     answers to your Home Assistant host's bare IP on port 443/80 (check
-     **Settings → Default Site** if you're not sure which one that is).
-  2. Edit that host, go to the **Custom locations** tab, and add a
-     location for `/api` — Scheme `https`, Forward Hostname/IP your HA
-     host's IP, Forward Port `api_port` (`8299` by default).
-  3. Repeat for `/description.xml`.
-  4. huebridge's certificate is self-signed, so proxying to it over
-     HTTPS needs upstream cert verification disabled — NPM's SSL tab
-     usually has a toggle for this, or add `proxy_ssl_verify off;` under
-     **Advanced**. Plain `http://` won't work since huebridge only
-     serves TLS.
 
-  Without this, third-party apps that respect the SSDP port (Hue
-  Essentials and similar) are the practical way to use huebridge on a
-  host where 80/443 are already spoken for.
+  There's no good fix for this if that reverse proxy is also fronting
+  Home Assistant itself on the same hostname/IP: Home Assistant's own
+  REST API already lives at `/api/*` on that host, so a path-based rule
+  forwarding `/api` to huebridge would shadow HA's own API rather than
+  add a side channel for huebridge — the two can't share a path on the
+  same (host, port) pair. Path-based routing only works when the paths
+  are actually distinct between the two backends, which isn't the case
+  here.
+
+  In practice, the two workable options are:
+  - Free up 80/443 for huebridge specifically (move whatever else is
+    using them, or give huebridge's host a second IP that nothing else
+    listens on — provided your reverse proxy isn't itself bound to
+    "all interfaces" on that port, which would still collide).
+  - Use a third-party app that respects the SSDP-advertised port
+    instead. Hue Essentials and similar apps do, and work with
+    huebridge on whatever `api_port` you've set.
 - **"Press the link button" never succeeds**: you need to click **Allow
   pairing** in the ingress UI *before* (or while) the app is trying — the
   window is time-limited.
