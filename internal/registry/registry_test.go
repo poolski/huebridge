@@ -1,6 +1,8 @@
 package registry
 
 import (
+	"encoding/json"
+	"os"
 	"path/filepath"
 	"testing"
 )
@@ -65,5 +67,45 @@ func TestRegistry_RemoveThenAllExcludesEntity(t *testing.T) {
 
 	if len(r.All()) != 0 {
 		t.Fatalf("got %d entries after Remove, want 0", len(r.All()))
+	}
+}
+
+func TestRegistry_HandlesCorruptedNextID(t *testing.T) {
+	// Simulate a hand-edited or corrupted registry.json where next_id is too low.
+	path := filepath.Join(t.TempDir(), "registry.json")
+	tmpDir := filepath.Dir(path)
+	if err := os.MkdirAll(tmpDir, 0o755); err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+
+	// Write corrupted JSON: next_id is 2, but entries already have HueID 1 and 3.
+	corrupted := fileFormat{
+		NextID: 2,
+		Entries: []Entry{
+			{HueID: 1, EntityID: "light.kitchen", Name: "Kitchen"},
+			{HueID: 3, EntityID: "light.hall", Name: "Hall"},
+		},
+	}
+	data, _ := json.MarshalIndent(corrupted, "", "  ")
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatalf("failed to write corrupted registry: %v", err)
+	}
+
+	// Load the corrupted registry - it should self-heal.
+	r, err := NewRegistry(path)
+	if err != nil {
+		t.Fatalf("NewRegistry() error: %v", err)
+	}
+
+	// The self-healing should have set NextID to max(3) + 1 = 4.
+	new1, _ := r.Add("light.bedroom", "Bedroom")
+	if new1.HueID <= 3 {
+		t.Fatalf("got HueID=%d, want > 3 to avoid collision with existing entries", new1.HueID)
+	}
+
+	// Add another entity and verify it also doesn't collide.
+	new2, _ := r.Add("light.garage", "Garage")
+	if new2.HueID == 1 || new2.HueID == 3 || new2.HueID == new1.HueID {
+		t.Fatalf("got HueID=%d, collides with existing entry or previous new entry", new2.HueID)
 	}
 }

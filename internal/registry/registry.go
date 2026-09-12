@@ -34,6 +34,19 @@ func NewRegistry(path string) (*Registry, error) {
 	if err != nil {
 		return nil, fmt.Errorf("load registry: %w", err)
 	}
+
+	// Self-heal: ensure NextID is strictly greater than all existing HueIDs.
+	// This handles corrupted or hand-edited registry files.
+	maxHueID := 0
+	for _, e := range state.Entries {
+		if e.HueID > maxHueID {
+			maxHueID = e.HueID
+		}
+	}
+	if state.NextID <= maxHueID {
+		state.NextID = maxHueID + 1
+	}
+
 	return &Registry{file: file, state: state}, nil
 }
 
@@ -66,6 +79,10 @@ func (r *Registry) Remove(entityID string) error {
 		if e.EntityID != entityID {
 			filtered = append(filtered, e)
 		}
+	}
+	// Early-return if nothing changed.
+	if len(filtered) == len(r.state.Entries) {
+		return nil
 	}
 	r.state.Entries = filtered
 
