@@ -15,6 +15,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -120,7 +121,16 @@ func main() {
 			log.Printf("list Home Assistant entities for the ingress picker: %v", err)
 			return nil
 		}
-		return entities
+		// The Hue bridge this add-on emulates only understands lights, so
+		// offering every HA domain in the picker would just bury the ones
+		// that matter.
+		lights := make([]string, 0, len(entities))
+		for _, id := range entities {
+			if strings.HasPrefix(id, "light.") {
+				lights = append(lights, id)
+			}
+		}
+		return lights
 	})
 
 	bridgeMux := http.NewServeMux()
