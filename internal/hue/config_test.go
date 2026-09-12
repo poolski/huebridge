@@ -31,3 +31,43 @@ func TestConfig_GetAuthenticated(t *testing.T) {
 		t.Fatalf("got APIVersion=%q, want 1.61.0", cfg.APIVersion)
 	}
 }
+
+func TestConfig_GetPublicNoUsername(t *testing.T) {
+	wl := NewWhitelist(filepath.Join(t.TempDir(), "wl.json"))
+	mac, _ := net.ParseMAC("aa:bb:cc:dd:ee:ff")
+	srv := NewServer(nil, nil, wl, &PairingWindow{}, "AABBCCFFFEDDEEFF", mac, nil, nil)
+
+	req := httptest.NewRequest("GET", "/api/config", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != 200 {
+		t.Fatalf("got status %d, want 200", rec.Code)
+	}
+
+	body := rec.Body.Bytes()
+
+	var cfg PublicBridgeConfig
+	if err := json.Unmarshal(body, &cfg); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if cfg.BridgeID != "AABBCCFFFEDDEEFF" {
+		t.Fatalf("got BridgeID=%q, want AABBCCFFFEDDEEFF", cfg.BridgeID)
+	}
+	if cfg.ReplacesBridgeID != nil {
+		t.Fatalf("got ReplacesBridgeID=%v, want nil", cfg.ReplacesBridgeID)
+	}
+
+	var raw map[string]any
+	if err := json.Unmarshal(body, &raw); err != nil {
+		t.Fatalf("decode raw: %v", err)
+	}
+	if _, ok := raw["replacesbridgeid"]; !ok {
+		t.Fatalf("replacesbridgeid key missing from response, want present with null value")
+	}
+	for _, forbidden := range []string{"whitelist", "linkbutton", "zigbeechannel"} {
+		if _, ok := raw[forbidden]; ok {
+			t.Fatalf("response includes %q, real bridges strip this from the unauthenticated config", forbidden)
+		}
+	}
+}

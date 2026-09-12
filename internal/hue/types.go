@@ -55,6 +55,23 @@ type BridgeConfig struct {
 	LinkButton       bool   `json:"linkbutton"`
 }
 
+// PublicBridgeConfig is the stripped config a real bridge returns from
+// GET /api/config — no username, no auth — with no whitelist or network
+// fields. Apps hit this to identify a bridge before pairing. See
+// docs/superpowers/specs/hue-clip-v1-api-reference.md, "Config".
+type PublicBridgeConfig struct {
+	Name             string  `json:"name"`
+	DatastoreVersion string  `json:"datastoreversion"`
+	SwVersion        string  `json:"swversion"`
+	APIVersion       string  `json:"apiversion"`
+	Mac              string  `json:"mac"`
+	BridgeID         string  `json:"bridgeid"`
+	FactoryNew       bool    `json:"factorynew"`
+	ReplacesBridgeID *string `json:"replacesbridgeid"`
+	ModelID          string  `json:"modelid"`
+	StarterKitID     string  `json:"starterkitid"`
+}
+
 type SceneLightState struct {
 	On  bool   `json:"on"`
 	Bri *uint8 `json:"bri,omitempty"`
