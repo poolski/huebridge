@@ -6,10 +6,14 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestConfig_GetAuthenticated(t *testing.T) {
 	wl := NewWhitelist(filepath.Join(t.TempDir(), "wl.json"))
+	if err := wl.Add(WhitelistEntry{Username: "testuser", Name: "test#app", CreateDate: time.Now()}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
 	mac, _ := net.ParseMAC("aa:bb:cc:dd:ee:ff")
 	srv := NewServer(nil, nil, wl, &PairingWindow{}, "AABBCCFFFEDDEEFF", mac, nil, nil)
 
@@ -29,6 +33,34 @@ func TestConfig_GetAuthenticated(t *testing.T) {
 	}
 	if cfg.APIVersion != "1.61.0" {
 		t.Fatalf("got APIVersion=%q, want 1.61.0", cfg.APIVersion)
+	}
+	entry, ok := cfg.Whitelist["testuser"]
+	if !ok {
+		t.Fatalf("got Whitelist=%+v, want an entry for testuser", cfg.Whitelist)
+	}
+	if entry.Name != "test#app" {
+		t.Fatalf("got Whitelist[testuser].Name=%q, want test#app", entry.Name)
+	}
+	if cfg.SwUpdate2.State != "noupdates" {
+		t.Fatalf("got SwUpdate2.State=%q, want noupdates", cfg.SwUpdate2.State)
+	}
+}
+
+func TestConfig_GetAuthenticatedUnrecognizedUsernameGetsStrippedConfig(t *testing.T) {
+	wl := NewWhitelist(filepath.Join(t.TempDir(), "wl.json"))
+	mac, _ := net.ParseMAC("aa:bb:cc:dd:ee:ff")
+	srv := NewServer(nil, nil, wl, &PairingWindow{}, "AABBCCFFFEDDEEFF", mac, nil, nil)
+
+	req := httptest.NewRequest("GET", "/api/never-paired/config", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	var raw map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &raw); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if _, ok := raw["whitelist"]; ok {
+		t.Fatalf("response includes whitelist for an unrecognized username, want it stripped like GET /api/config")
 	}
 }
 

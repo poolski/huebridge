@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"maps"
 	"net/http"
 	"strings"
 	"sync"
@@ -72,6 +73,16 @@ func (wl *Whitelist) Lookup(username string) (WhitelistEntry, bool) {
 	return e, ok
 }
 
+// All returns every whitelisted entry, keyed by username — used to build
+// the "whitelist" object in GET /api/{username}/config.
+func (wl *Whitelist) All() map[string]WhitelistEntry {
+	wl.mu.Lock()
+	defer wl.mu.Unlock()
+	out := make(map[string]WhitelistEntry, len(wl.state.Entries))
+	maps.Copy(out, wl.state.Entries)
+	return out
+}
+
 func randomHex(n int) string {
 	b := make([]byte, n)
 	rand.Read(b)
@@ -81,7 +92,8 @@ func randomHex(n int) string {
 func handlePairing(wl *Whitelist, win *PairingWindow) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
-			DeviceType string `json:"devicetype"`
+			DeviceType        string `json:"devicetype"`
+			GenerateClientKey bool   `json:"generateclientkey"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || strings.TrimSpace(req.DeviceType) == "" {
 			WriteError(w, http.StatusOK, 6, "/api/devicetype", "parameter, devicetype, not available")
@@ -99,6 +111,10 @@ func handlePairing(wl *Whitelist, win *PairingWindow) http.HandlerFunc {
 			return
 		}
 
-		WriteSuccess(w, map[string]any{"username": username})
+		resp := map[string]any{"username": username}
+		if req.GenerateClientKey {
+			resp["clientkey"] = strings.ToUpper(randomHex(16))
+		}
+		WriteSuccess(w, resp)
 	}
 }

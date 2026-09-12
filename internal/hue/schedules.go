@@ -244,10 +244,14 @@ func (t *Ticker) resolveTargetEntity(address string) (string, bool) {
 
 func toSchedule(s StoredSchedule) Schedule {
 	return Schedule{
-		Name:      s.Name,
-		Command:   ScheduleCommand{Address: s.Address, Method: s.Method, Body: s.Body},
-		LocalTime: s.LocalTime,
-		Status:    s.Status,
+		Name: s.Name,
+		// huebridge has no create-time description field to capture; a
+		// real bridge always includes this key, defaulting to "none" when
+		// unset, rather than omitting it.
+		Description: "none",
+		Command:     ScheduleCommand{Address: s.Address, Method: s.Method, Body: s.Body},
+		LocalTime:   s.LocalTime,
+		Status:      s.Status,
 	}
 }
 

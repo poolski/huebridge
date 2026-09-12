@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -60,6 +61,47 @@ func TestPairing_SucceedsWithOpenWindow(t *testing.T) {
 
 	if _, ok := wl.Lookup(username); !ok {
 		t.Fatalf("username %q was not persisted to the whitelist", username)
+	}
+}
+
+func TestPairing_GeneratesClientKeyWhenRequested(t *testing.T) {
+	wl := NewWhitelist(filepath.Join(t.TempDir(), "whitelist.json"))
+	win := &PairingWindow{}
+	win.Open(30 * timeSecond)
+	srv := NewServer(nil, nil, wl, win, "AABBCCFFFEDDEEFF", mustParseMAC("aa:bb:cc:dd:ee:ff"), nil, nil)
+
+	req := httptest.NewRequest("POST", "/api", bytes.NewReader([]byte(`{"devicetype":"test#app","generateclientkey":true}`)))
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	var body []map[string]map[string]any
+	json.NewDecoder(rec.Body).Decode(&body)
+	if len(body) != 1 || body[0]["success"] == nil {
+		t.Fatalf("got %+v, want a single success entry", body)
+	}
+	clientkey, _ := body[0]["success"]["clientkey"].(string)
+	if len(clientkey) != 32 {
+		t.Fatalf("got clientkey=%q (len %d), want a 32-character hex string", clientkey, len(clientkey))
+	}
+	if clientkey != strings.ToUpper(clientkey) {
+		t.Fatalf("got clientkey=%q, want uppercase", clientkey)
+	}
+}
+
+func TestPairing_OmitsClientKeyWhenNotRequested(t *testing.T) {
+	wl := NewWhitelist(filepath.Join(t.TempDir(), "whitelist.json"))
+	win := &PairingWindow{}
+	win.Open(30 * timeSecond)
+	srv := NewServer(nil, nil, wl, win, "AABBCCFFFEDDEEFF", mustParseMAC("aa:bb:cc:dd:ee:ff"), nil, nil)
+
+	req := httptest.NewRequest("POST", "/api", bytes.NewReader([]byte(`{"devicetype":"test#app"}`)))
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	var body []map[string]map[string]any
+	json.NewDecoder(rec.Body).Decode(&body)
+	if _, ok := body[0]["success"]["clientkey"]; ok {
+		t.Fatalf("got clientkey in response, want it omitted when generateclientkey wasn't set")
 	}
 }
 

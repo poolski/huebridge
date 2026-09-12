@@ -44,6 +44,11 @@ func NewServer(reg *registry.Registry, be backend.Backend, wl *Whitelist, win *P
 	// docs/superpowers/specs/hue-clip-v1-api-reference.md, "Config".
 	mux.HandleFunc("GET /api/config", handleGetPublicConfig(bridgeID, mac))
 
+	// POST /updater: a real bridge accepts an app-pushed firmware file
+	// here. See handleUpdater — huebridge has nothing to install, but a
+	// clean 200 beats a 404 an app may retry or error on.
+	mux.HandleFunc("POST /updater", handleUpdater())
+
 	handle := func(pattern string, h http.HandlerFunc) {
 		mux.HandleFunc(pattern, requireUser(wl, h))
 	}
@@ -55,7 +60,7 @@ func NewServer(reg *registry.Registry, be backend.Backend, wl *Whitelist, win *P
 	// docs/superpowers/specs/hue-clip-v1-api-reference.md, "Config"). The
 	// payload we serve is already that stripped subset — no whitelist, no
 	// network details.
-	mux.HandleFunc("GET /api/{username}/config", handleGetConfig(bridgeID, mac, win))
+	mux.HandleFunc("GET /api/{username}/config", handleGetConfig(bridgeID, mac, win, wl))
 
 	if reg != nil && be != nil {
 		handle("GET /api/{username}/lights", handleGetLights(reg, be))

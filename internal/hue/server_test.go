@@ -124,3 +124,19 @@ func TestServer_SharesScheduleStoreWithCaller(t *testing.T) {
 		t.Fatalf("schedule %q is not visible in the store passed to NewServer", id)
 	}
 }
+
+// TestServer_UpdaterAcceptsPushedFirmware covers POST /updater — the app
+// pushes a firmware file here when it believes an update is available.
+// huebridge has nothing to install; this just must not 404.
+func TestServer_UpdaterAcceptsPushedFirmware(t *testing.T) {
+	wl := NewWhitelist(filepath.Join(t.TempDir(), "wl.json"))
+	srv := NewServer(nil, nil, wl, &PairingWindow{}, "AABBCCFFFEDDEEFF", mustParseMAC("aa:bb:cc:dd:ee:ff"), nil, nil)
+
+	req := httptest.NewRequest("POST", "/updater", strings.NewReader("BSB002"))
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("got status %d, want 200", rec.Code)
+	}
+}
