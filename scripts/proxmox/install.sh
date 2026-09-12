@@ -22,6 +22,16 @@ msg_info() { echo -e " ${YW}○${CL} $1"; }
 msg_ok() { echo -e " ${GN}✓${CL} $1"; }
 msg_error() { echo -e " ${RD}✗${CL} $1" >&2; }
 
+msg_info "Configuring console auto-login"
+mkdir -p /etc/systemd/system/console-getty.service.d
+cat >/etc/systemd/system/console-getty.service.d/override.conf <<'UNIT'
+[Service]
+ExecStart=
+ExecStart=-/sbin/agetty --autologin root --noclear --keep-baud console 115200,38400,9600 $TERM
+UNIT
+systemctl daemon-reload
+msg_ok "Configured console auto-login"
+
 msg_info "Installing dependencies"
 apt-get update -qq
 apt-get install -y --no-install-recommends git ca-certificates curl >/dev/null
