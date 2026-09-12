@@ -35,12 +35,14 @@ const (
 	// that up on their own terms rather than huebridge claiming it outright.
 	defaultBridgePort = 8299
 
-	// defaultIngressPort is used outside the add-on (e.g. local dev), where
-	// INGRESS_PORT isn't set.
+	// defaultIngressPort is used if Supervisor can't be asked which port it
+	// assigned (see fetchIngressPort) — ingress won't work, but the rest of
+	// the bridge still can.
 	defaultIngressPort = 8298
 
-	tickTimeout     = 30 * time.Second
-	shutdownTimeout = 10 * time.Second
+	tickTimeout          = 30 * time.Second
+	shutdownTimeout      = 10 * time.Second
+	supervisorAPITimeout = 10 * time.Second
 )
 
 func mustEnv(key string) string {
@@ -56,10 +58,21 @@ func main() {
 	haURL := mustEnv("HUEBRIDGE_HA_URL")
 	haToken := mustEnv("SUPERVISOR_TOKEN")
 
-	// config.yaml sets ingress_port: 0, so Supervisor picks a free host port
-	// at startup (avoiding collisions with other host_network add-ons) and
-	// hands it back via INGRESS_PORT.
-	ingressPort := envIntOrDefault("INGRESS_PORT", defaultIngressPort)
+	// config.yaml sets ingress_port: 0 so Supervisor assigns a free host
+	// port at install time (avoiding a collision with other host_network
+	// add-ons), but it doesn't pass that port to the container by any
+	// other means — Supervisor's own docs say to read it back via its API.
+	ingressPort := defaultIngressPort
+	{
+		fetchCtx, cancel := context.WithTimeout(context.Background(), supervisorAPITimeout)
+		port, err := fetchIngressPort(fetchCtx, http.DefaultClient, "http://supervisor", haToken)
+		cancel()
+		if err != nil {
+			log.Printf("warning: fetch assigned ingress port from Supervisor: %v (falling back to %d, ingress will likely not work)", err, defaultIngressPort)
+		} else {
+			ingressPort = port
+		}
+	}
 	bridgePort := envIntOrDefault("HUEBRIDGE_API_PORT", defaultBridgePort)
 
 	mac := lookupMAC()
