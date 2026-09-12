@@ -2,8 +2,11 @@ package hue
 
 import (
 	"encoding/json"
+	"io"
+	"log"
 	"net"
 	"net/http"
+	"os"
 	"time"
 )
 
@@ -120,14 +123,34 @@ func handleGetConfig(bridgeID string, mac net.HardwareAddr, win *PairingWindow, 
 	}
 }
 
+// updaterCapturePath is a TEMPORARY debug capture location for reverse
+// engineering the firmware-push format POST /updater receives — see
+// handleUpdater. Remove capture once that's understood.
+const updaterCapturePath = "/tmp/huebridge-updater-capture.bin"
+
 // handleUpdater serves POST /updater — a real bridge accepts an app-pushed
 // firmware file here. huebridge has nothing to install; accept and ignore
 // it rather than 404, since noUpdatesAvailable() should mean this is only
 // ever hit by a user-forced "check for update" rather than app-driven
 // behavior. Its response shape is undocumented (not observed against a
 // real bridge), so this just answers 200 with an empty body.
+//
+// TEMPORARY: also captures the raw request body to updaterCapturePath so
+// its firmware-container format can be inspected. Remove this capture
+// once that's done — it's not something a normal install should carry.
 func handleUpdater() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if f, err := os.Create(updaterCapturePath); err != nil {
+			log.Printf("capture /updater body: create %s: %v", updaterCapturePath, err)
+		} else {
+			n, err := io.Copy(f, r.Body)
+			f.Close()
+			if err != nil {
+				log.Printf("capture /updater body: %v", err)
+			} else {
+				log.Printf("captured /updater body: %d bytes to %s (Content-Type: %s)", n, updaterCapturePath, r.Header.Get("Content-Type"))
+			}
+		}
 		w.WriteHeader(http.StatusOK)
 	}
 }
