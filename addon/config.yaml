@@ -2,6 +2,8 @@ name: huebridge
 version: "0.1.0"
 slug: huebridge
 description: Emulates a Philips Hue Bridge over a curated set of Home Assistant entities
+url: https://github.com/poolski/huebridge
+startup: services
 arch:
   - amd64
   - aarch64
