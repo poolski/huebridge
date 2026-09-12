@@ -76,13 +76,24 @@ the same binary; it switches into standalone mode automatically whenever
 `SUPERVISOR_TOKEN` isn't set (i.e. whenever it's not started as a
 Supervisor add-on).
 
+SSDP/mDNS discovery (how the Hue app finds a bridge) is LAN multicast — it
+doesn't cross Docker's default bridge network, and a container on it would
+advertise its own internal IP anyway, which the Hue app could never reach.
+**Standalone containers need `--network host`**, the same reason the Home
+Assistant add-on requires `host_network: true`. Bind the bridge to `443`
+while you're at it: the official Hue app's local search never follows the
+SSDP-advertised port, only probing 80/443 directly, and a standalone host
+(unlike the add-on's) usually doesn't already have HA's own web server or
+a reverse proxy sitting on it.
+
 There's no published image for this yet — build one from the `Dockerfile`
 in this repo, then run it:
 
 ```bash
 docker build -t huebridge .
 docker run -d \
-  -p 8299:8299 -p 8300:8300 \
+  --network host \
+  -e HUEBRIDGE_API_PORT=443 \
   -v huebridge-data:/data \
   huebridge
 ```
