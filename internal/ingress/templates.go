@@ -143,6 +143,26 @@ var indexTemplate = template.Must(template.New("index").Parse(`
 			font-size: 0.9rem;
 			margin: 0;
 		}
+		ul.plain li form {
+			gap: 0;
+			flex: 0 0 auto;
+		}
+		button.delete {
+			padding: 0;
+			width: 24px;
+			height: 24px;
+			line-height: 1;
+			border-radius: 50%;
+			background: transparent;
+			color: var(--text-muted);
+			font-size: 1.1rem;
+			font-weight: 400;
+		}
+		button.delete:hover {
+			background: #e5484d33;
+			color: #e5484d;
+			filter: none;
+		}
 	</style>
 </head>
 <body>
@@ -160,7 +180,12 @@ var indexTemplate = template.Must(template.New("index").Parse(`
 			<h2>Exposed entities</h2>
 			{{if .Entries}}
 			<ul class="plain">
-				{{range .Entries}}<li>{{.Name}} <span class="id">{{.EntityID}}</span></li>{{end}}
+				{{range .Entries}}<li>
+					<span>{{.Name}} <span class="id">{{.EntityID}}</span></span>
+					<form method="POST" action="entities/{{.EntityID}}/delete">
+						<button type="submit" class="delete" title="Remove {{.Name}}" aria-label="Remove {{.Name}}">&times;</button>
+					</form>
+				</li>{{end}}
 			</ul>
 			{{else}}
 			<p class="empty">No entities exposed yet.</p>

@@ -86,6 +86,14 @@ func NewHandler(reg *registry.Registry, win *hue.PairingWindow, availableEntitie
 		redirectHome(w, r)
 	})
 
+	mux.HandleFunc("POST /entities/{id}/delete", func(w http.ResponseWriter, r *http.Request) {
+		if err := reg.Remove(r.PathValue("id")); err != nil {
+			http.Error(w, "failed to remove entity", http.StatusInternalServerError)
+			return
+		}
+		redirectHome(w, r)
+	})
+
 	// Groups are what scenes are created against, so without a way to make
 	// one the Hue app can never create a scene at all.
 	mux.HandleFunc("POST /groups", func(w http.ResponseWriter, r *http.Request) {
