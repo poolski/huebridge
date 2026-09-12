@@ -151,8 +151,14 @@ done
 msg_ok "Network is up"
 
 msg_info "Installing huebridge inside the container (this builds from source, so it takes a few minutes)"
-INSTALL_SCRIPT_LOCAL="$(dirname "${BASH_SOURCE[0]}")/install.sh"
-if [ -f "$INSTALL_SCRIPT_LOCAL" ]; then
+# BASH_SOURCE is unset (not just empty) when this script runs via
+# `bash -c "$(curl ...)"`, as the README's one-liner does — there's no
+# script file to speak of, so guard the array access under set -u.
+INSTALL_SCRIPT_LOCAL=""
+if [ -n "${BASH_SOURCE[0]:-}" ]; then
+	INSTALL_SCRIPT_LOCAL="$(dirname "${BASH_SOURCE[0]}")/install.sh"
+fi
+if [ -n "$INSTALL_SCRIPT_LOCAL" ] && [ -f "$INSTALL_SCRIPT_LOCAL" ]; then
 	pct push "$VMID" "$INSTALL_SCRIPT_LOCAL" /root/install.sh
 	pct exec "$VMID" -- env HUEBRIDGE_REPO="$HUEBRIDGE_REPO" HUEBRIDGE_REF="$HUEBRIDGE_REF" bash /root/install.sh
 else
