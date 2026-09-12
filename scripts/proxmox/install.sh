@@ -27,21 +27,24 @@ msg_info "Configuring console auto-login"
 # (console-getty.service) or the first LXC pty (container-getty@1.service,
 # auto-instantiated per container_ttys) depending on the container's
 # console configuration — override both rather than guess which one
-# applies. Each override keeps its unit's own stock ExecStart (agetty
-# uses "-" for the line argument since systemd already binds the tty via
-# TTYPath/StandardInput) and just adds --autologin root.
+# applies. Each override keeps its unit's own stock device-handling
+# arguments (agetty uses "-" for the line argument since systemd already
+# binds the tty via TTYPath/StandardInput) and adds --autologin root,
+# which on its own already appends "-f root" to login(1) to skip
+# authentication (see agetty(8)) — no -o/--login-options needed, and
+# combining the two is what caused the still-prompting password bug.
 mkdir -p /etc/systemd/system/console-getty.service.d
 cat >/etc/systemd/system/console-getty.service.d/override.conf <<'UNIT'
 [Service]
 ExecStart=
-ExecStart=-/sbin/agetty --autologin root -o '-p -- \u' --noclear --keep-baud - 115200,38400,9600 $TERM
+ExecStart=-/sbin/agetty --autologin root --noclear --keep-baud - 115200,38400,9600 $TERM
 UNIT
 
 mkdir -p /etc/systemd/system/container-getty@1.service.d
 cat >/etc/systemd/system/container-getty@1.service.d/override.conf <<'UNIT'
 [Service]
 ExecStart=
-ExecStart=-/sbin/agetty --autologin root -o '-p -- \u' --noclear - $TERM
+ExecStart=-/sbin/agetty --autologin root --noclear - $TERM
 UNIT
 
 systemctl daemon-reload
