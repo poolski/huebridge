@@ -76,13 +76,24 @@ the same binary; it switches into standalone mode automatically whenever
 `SUPERVISOR_TOKEN` isn't set (i.e. whenever it's not started as a
 Supervisor add-on).
 
+SSDP/mDNS discovery (how the Hue app finds a bridge) is LAN multicast — it
+doesn't cross Docker's default bridge network, and a container on it would
+advertise its own internal IP anyway, which the Hue app could never reach.
+**Standalone containers need `--network host`**, the same reason the Home
+Assistant add-on requires `host_network: true`. Bind the bridge to `443`
+while you're at it: the official Hue app's local search never follows the
+SSDP-advertised port, only probing 80/443 directly, and a standalone host
+(unlike the add-on's) usually doesn't already have HA's own web server or
+a reverse proxy sitting on it.
+
 There's no published image for this yet — build one from the `Dockerfile`
 in this repo, then run it:
 
 ```bash
 docker build -t huebridge .
 docker run -d \
-  -p 8299:8299 -p 8300:8300 \
+  --network host \
+  -e HUEBRIDGE_API_PORT=443 \
   -v huebridge-data:/data \
   huebridge
 ```
@@ -93,6 +104,29 @@ in Portainer, and works with Podman's `podman-compose`/`podman compose`):
 ```bash
 docker compose up -d --build
 ```
+
+### Running on Proxmox (LXC)
+
+An LXC is arguably the better fit for standalone huebridge than a Docker
+container: it gets its own address directly on the LAN bridge, so there's
+nothing to configure for SSDP/mDNS discovery or binding `443` — no
+`--network host` equivalent needed, it's just how LXC networking works.
+
+Run this on the Proxmox host itself, as root:
+
+```bash
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/poolski/huebridge/main/scripts/proxmox/create-lxc.sh)"
+```
+
+It walks through the same default-vs-advanced-settings prompts as the
+[Proxmox VE Community Scripts](https://github.com/community-scripts/ProxmoxVE)
+you may already be used to (this doesn't depend on that project — it's a
+self-contained script in this repo, `scripts/proxmox/create-lxc.sh`, at the
+default settings: Debian 12, 1 vCPU, 512MB RAM, 4GB disk, DHCP), creates an
+unprivileged LXC, and installs huebridge into it as a systemd service
+listening on `443`, built from source since there's no published binary
+release yet. Every setting is also overridable non-interactively via
+environment variables — see the script's header comment.
 
 - **`HUEBRIDGE_API_PORT`** (default `8299`) — same as the add-on's
   `api_port` option: the emulated Hue Bridge API and its SSDP/mDNS
