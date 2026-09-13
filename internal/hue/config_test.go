@@ -70,6 +70,35 @@ func TestConfig_GetAuthenticatedUnrecognizedUsernameGetsStrippedConfig(t *testin
 	}
 }
 
+func TestSetVersionOverrides_OnlyOverridesNonEmptyArgs(t *testing.T) {
+	origDatastore, origSw, origAPI := currentDatastoreVersion, currentSwVersion, currentAPIVersion
+	t.Cleanup(func() {
+		currentDatastoreVersion, currentSwVersion, currentAPIVersion = origDatastore, origSw, origAPI
+	})
+
+	SetVersionOverrides("", "1955082050", "")
+	if currentDatastoreVersion != origDatastore {
+		t.Fatalf("got currentDatastoreVersion=%q, want unchanged %q", currentDatastoreVersion, origDatastore)
+	}
+	if currentSwVersion != "1955082050" {
+		t.Fatalf("got currentSwVersion=%q, want 1955082050", currentSwVersion)
+	}
+	if currentAPIVersion != origAPI {
+		t.Fatalf("got currentAPIVersion=%q, want unchanged %q", currentAPIVersion, origAPI)
+	}
+
+	SetVersionOverrides("999", "", "9.9.9")
+	if currentDatastoreVersion != "999" {
+		t.Fatalf("got currentDatastoreVersion=%q, want 999", currentDatastoreVersion)
+	}
+	if currentSwVersion != "1955082050" {
+		t.Fatalf("got currentSwVersion=%q, want unchanged 1955082050 from the previous call", currentSwVersion)
+	}
+	if currentAPIVersion != "9.9.9" {
+		t.Fatalf("got currentAPIVersion=%q, want 9.9.9", currentAPIVersion)
+	}
+}
+
 func TestConfig_GetPublicNoUsername(t *testing.T) {
 	wl := NewWhitelist(filepath.Join(t.TempDir(), "wl.json"))
 	mac, _ := net.ParseMAC("aa:bb:cc:dd:ee:ff")

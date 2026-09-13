@@ -74,6 +74,17 @@ func main() {
 	bridgePort := envIntOrDefault("HUEBRIDGE_API_PORT", defaultBridgePort)
 	logLevel := logging.ParseLevel(os.Getenv("HUEBRIDGE_LOG_LEVEL"))
 
+	// Lets the reported datastore/software/API versions be swapped at
+	// runtime instead of via a rebuild — see
+	// docs/superpowers/notes/2026-09-13-tls-pairing-failure-log.md for why
+	// that trio needs testing this often. Empty env vars leave the
+	// known-good defaults in internal/hue/config.go untouched.
+	hue.SetVersionOverrides(
+		os.Getenv("HUEBRIDGE_DATASTORE_VERSION"),
+		os.Getenv("HUEBRIDGE_SWVERSION"),
+		os.Getenv("HUEBRIDGE_APIVERSION"),
+	)
+
 	if isStandalone(os.Getenv) {
 		runStandalone(dataDir, bridgePort, logLevel)
 		return

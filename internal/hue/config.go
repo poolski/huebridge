@@ -20,20 +20,33 @@ const configTimeFormat = "2006-01-02T15:04:05"
 // completes" problem years ago
 // (https://diyhue.discourse.group/t/app-requires-update-of-hue-bridge-update-fails/233) —
 // their maintainer-confirmed fix was this specific matched real firmware
-// pair, not an arbitrary old placeholder.
-//
-// DEBUG (throwaway, see docs/superpowers/notes/2026-09-13-tls-pairing-failure-log.md):
-// currentSwVersion is temporarily pinned to 1955082050 — the exact build
-// Hue's developer docs cite as when CLIP v2 became the production API for
-// all Signify apps — to test whether crossing that threshold changes the
-// app's TLS/connection behavior, independent of apiversion (left at the
-// known-good 1.49.0 on purpose, so this is the only variable that moved).
-// Revert to 1949203030 once the spike concludes.
-const (
+// pair, not an arbitrary old placeholder. Overridable at runtime via
+// SetVersionOverrides (see docs/superpowers/notes/2026-09-13-tls-pairing-failure-log.md
+// for why: this trio has taken more rebuild-and-redeploy cycles to pin down
+// than anything else on this branch) — don't change these defaults without
+// reading that log first.
+var (
 	currentDatastoreVersion = "126"
-	currentSwVersion        = "1955082050"
+	currentSwVersion        = "1949203030"
 	currentAPIVersion       = "1.49.0"
 )
+
+// SetVersionOverrides replaces currentDatastoreVersion/currentSwVersion/
+// currentAPIVersion with any non-empty argument, leaving the corresponding
+// default in place otherwise. Meant to be called at most once, at startup,
+// before the server accepts connections — these three aren't behind a
+// mutex, so mutating them after that point is a data race.
+func SetVersionOverrides(datastoreVersion, swVersion, apiVersion string) {
+	if datastoreVersion != "" {
+		currentDatastoreVersion = datastoreVersion
+	}
+	if swVersion != "" {
+		currentSwVersion = swVersion
+	}
+	if apiVersion != "" {
+		currentAPIVersion = apiVersion
+	}
+}
 
 // lastInstallDate is computed once at process start, not per-request — a
 // real bridge's last-install timestamp is a fixed past event, and

@@ -11,12 +11,21 @@
 #                        service writes per-connection TLS secrets to, so a concurrent
 #                        tcpdump capture of the bridge port can be decrypted in Wireshark
 #                        afterwards. Unset by default. Revert before merging.
+#   HUEBRIDGE_DATASTORE_VERSION/HUEBRIDGE_SWVERSION/HUEBRIDGE_APIVERSION
+#                        Override the datastoreversion/swversion/apiversion the bridge
+#                        reports, without a rebuild — see
+#                        docs/superpowers/notes/2026-09-13-tls-pairing-failure-log.md for
+#                        why this trio needs testing so often. Unset by default (keeps
+#                        internal/hue/config.go's known-good values).
 set -euo pipefail
 
 HUEBRIDGE_REPO="${HUEBRIDGE_REPO:-https://github.com/poolski/huebridge.git}"
 HUEBRIDGE_REF="${HUEBRIDGE_REF:-main}"
 HUEBRIDGE_LOG_LEVEL="${HUEBRIDGE_LOG_LEVEL:-info}"
 HUEBRIDGE_TLS_KEYLOG="${HUEBRIDGE_TLS_KEYLOG:-}"
+HUEBRIDGE_DATASTORE_VERSION="${HUEBRIDGE_DATASTORE_VERSION:-}"
+HUEBRIDGE_SWVERSION="${HUEBRIDGE_SWVERSION:-}"
+HUEBRIDGE_APIVERSION="${HUEBRIDGE_APIVERSION:-}"
 
 YW="\033[33m"
 GN="\033[1;92m"
@@ -87,9 +96,12 @@ RestartSec=5
 WantedBy=multi-user.target
 UNIT
 
-if [ -n "$HUEBRIDGE_TLS_KEYLOG" ]; then
-	sed -i "/^\[Install\]/i Environment=HUEBRIDGE_TLS_KEYLOG=$HUEBRIDGE_TLS_KEYLOG" /etc/systemd/system/huebridge.service
-fi
+for var in HUEBRIDGE_TLS_KEYLOG HUEBRIDGE_DATASTORE_VERSION HUEBRIDGE_SWVERSION HUEBRIDGE_APIVERSION; do
+	value="${!var}"
+	if [ -n "$value" ]; then
+		sed -i "/^\[Install\]/i Environment=$var=$value" /etc/systemd/system/huebridge.service
+	fi
+done
 
 msg_info "Starting huebridge"
 systemctl daemon-reload
