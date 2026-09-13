@@ -21,14 +21,24 @@ func ssdpUSN(bridgeID string) string {
 	return fmt.Sprintf("uuid:2f402f80-da50-11e1-9b23-%s::upnp:rootdevice", suffix)
 }
 
+// ssdpServerHeader builds the SSDP SERVER header, embedding the same
+// apiversion the CLIP API itself reports. A real bridge's SSDP/CLIP
+// versions always agree; keeping this hardcoded independently of
+// apiversion (as it was before) meant every version-pair experiment on
+// this branch silently advertised a mismatched version over SSDP. See
+// docs/superpowers/notes/2026-09-13-tls-pairing-failure-log.md.
+func ssdpServerHeader(apiVersion string) string {
+	return fmt.Sprintf("huebridge/1.0 UPnP/1.0 IpBridge/%s", apiVersion)
+}
+
 // StartSSDP advertises huebridge as a Hue Bridge over SSDP. It returns a
 // stop function to call on shutdown.
-func StartSSDP(bridgeID string, localIP string, httpsPort int) (stop func(), err error) {
+func StartSSDP(bridgeID string, localIP string, httpsPort int, apiVersion string) (stop func(), err error) {
 	ad, err := ssdp.Advertise(
 		"upnp:rootdevice",
 		ssdpUSN(bridgeID),
 		ssdpLocationURL(localIP, httpsPort),
-		"huebridge/1.0 UPnP/1.0 IpBridge/1.61.0",
+		ssdpServerHeader(apiVersion),
 		1800,
 	)
 	if err != nil {

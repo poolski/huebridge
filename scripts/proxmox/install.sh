@@ -3,12 +3,29 @@
 # service. Meant to be run INSIDE the container — create-lxc.sh handles
 # that. Safe to run standalone too, e.g. against an existing LXC/VM.
 #
-#   HUEBRIDGE_REPO   Git repo to build from (default: https://github.com/poolski/huebridge.git)
-#   HUEBRIDGE_REF    Git ref to build (default: main)
+#   HUEBRIDGE_REPO       Git repo to build from (default: https://github.com/poolski/huebridge.git)
+#   HUEBRIDGE_REF        Git ref to build (default: main)
+#   HUEBRIDGE_LOG_LEVEL  Log level the installed service runs with (default: info; set to
+#                        "debug" to log request/response bodies and headers while troubleshooting)
+#   HUEBRIDGE_TLS_KEYLOG DEBUG (throwaway, TLS-abort spike): if set, path the running
+#                        service writes per-connection TLS secrets to, so a concurrent
+#                        tcpdump capture of the bridge port can be decrypted in Wireshark
+#                        afterwards. Unset by default. Revert before merging.
+#   HUEBRIDGE_DATASTORE_VERSION/HUEBRIDGE_SWVERSION/HUEBRIDGE_APIVERSION
+#                        Override the datastoreversion/swversion/apiversion the bridge
+#                        reports, without a rebuild — see
+#                        docs/superpowers/notes/2026-09-13-tls-pairing-failure-log.md for
+#                        why this trio needs testing so often. Unset by default (keeps
+#                        internal/hue/config.go's known-good values).
 set -euo pipefail
 
 HUEBRIDGE_REPO="${HUEBRIDGE_REPO:-https://github.com/poolski/huebridge.git}"
 HUEBRIDGE_REF="${HUEBRIDGE_REF:-main}"
+HUEBRIDGE_LOG_LEVEL="${HUEBRIDGE_LOG_LEVEL:-info}"
+HUEBRIDGE_TLS_KEYLOG="${HUEBRIDGE_TLS_KEYLOG:-}"
+HUEBRIDGE_DATASTORE_VERSION="${HUEBRIDGE_DATASTORE_VERSION:-}"
+HUEBRIDGE_SWVERSION="${HUEBRIDGE_SWVERSION:-}"
+HUEBRIDGE_APIVERSION="${HUEBRIDGE_APIVERSION:-}"
 
 YW="\033[33m"
 GN="\033[1;92m"
@@ -78,7 +95,7 @@ msg_ok "Built huebridge"
 
 mkdir -p /var/lib/huebridge
 
-cat >/etc/systemd/system/huebridge.service <<'UNIT'
+cat >/etc/systemd/system/huebridge.service <<UNIT
 [Unit]
 Description=huebridge (standalone)
 After=network-online.target
@@ -88,6 +105,7 @@ Wants=network-online.target
 ExecStart=/usr/local/bin/huebridge
 Environment=HUEBRIDGE_DATA_DIR=/var/lib/huebridge
 Environment=HUEBRIDGE_API_PORT=443
+Environment=HUEBRIDGE_LOG_LEVEL=$HUEBRIDGE_LOG_LEVEL
 Restart=on-failure
 RestartSec=5
 
@@ -95,7 +113,19 @@ RestartSec=5
 WantedBy=multi-user.target
 UNIT
 
+for var in HUEBRIDGE_TLS_KEYLOG HUEBRIDGE_DATASTORE_VERSION HUEBRIDGE_SWVERSION HUEBRIDGE_APIVERSION; do
+	value="${!var}"
+	if [ -n "$value" ]; then
+		sed -i "/^\[Install\]/i Environment=$var=$value" /etc/systemd/system/huebridge.service
+	fi
+done
+
 msg_info "Starting huebridge"
 systemctl daemon-reload
-systemctl enable --now huebridge >/dev/null
+systemctl enable huebridge >/dev/null
+# `enable --now` only starts the unit if it isn't already active — on a
+# re-run against an already-running install (picking up a fix, a new
+# HUEBRIDGE_REF), that's a no-op and the old binary keeps running despite
+# just being overwritten. restart always replaces the running process.
+systemctl restart huebridge
 msg_ok "Started huebridge"

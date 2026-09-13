@@ -36,23 +36,86 @@ type GroupAction struct {
 type Group struct {
 	Name       string      `json:"name"`
 	Lights     []string    `json:"lights"`
+	Sensors    []string    `json:"sensors"`
 	Type       string      `json:"type"`
 	Class      string      `json:"class"`
 	GroupState GroupState  `json:"state"`
+	Recycle    bool        `json:"recycle"`
 	Action     GroupAction `json:"action"`
 }
 
+// ConfigWhitelistEntry is one entry of BridgeConfig.Whitelist. The
+// space-containing JSON keys match the real bridge's wire format exactly
+// (see hue-clip-v1-api-reference.md, "Config").
+type ConfigWhitelistEntry struct {
+	CreateDate     string `json:"create date"`
+	LastUseDate    string `json:"last use date"`
+	Name           string `json:"name"`
+	LastAccessType string `json:"lastaccesstype"`
+}
+
+// SwUpdateDeviceTypes and SwUpdate mirror the real bridge's legacy
+// (v1) software-update status object.
+type SwUpdateDeviceTypes struct {
+	Bridge  bool     `json:"bridge"`
+	Lights  []string `json:"lights"`
+	Sensors []string `json:"sensors"`
+}
+
+type SwUpdate struct {
+	CheckForUpdate bool                `json:"checkforupdate"`
+	DeviceTypes    SwUpdateDeviceTypes `json:"devicetypes"`
+	Notify         bool                `json:"notify"`
+	Text           string              `json:"text"`
+	UpdateState    int                 `json:"updatestate"`
+	URL            string              `json:"url"`
+}
+
+// SwUpdate2 mirrors the current software-update status object. State
+// "noupdates" tells the app there's nothing to check or download —
+// without it, clients have been observed treating the field's absence as
+// an update being available and prompting to install one huebridge has
+// nowhere real to fetch.
+type SwUpdate2AutoInstall struct {
+	On         bool   `json:"on"`
+	UpdateTime string `json:"updatetime"`
+}
+
+type SwUpdate2Bridge struct {
+	LastInstall string `json:"lastinstall"`
+	State       string `json:"state"`
+}
+
+type SwUpdate2 struct {
+	AutoInstall    SwUpdate2AutoInstall `json:"autoinstall"`
+	Bridge         SwUpdate2Bridge      `json:"bridge"`
+	CheckForUpdate bool                 `json:"checkforupdate"`
+	LastChange     string               `json:"lastchange"`
+	State          string               `json:"state"`
+}
+
 type BridgeConfig struct {
-	Name             string `json:"name"`
-	DatastoreVersion string `json:"datastoreversion"`
-	SwVersion        string `json:"swversion"`
-	APIVersion       string `json:"apiversion"`
-	Mac              string `json:"mac"`
-	BridgeID         string `json:"bridgeid"`
-	FactoryNew       bool   `json:"factorynew"`
-	ModelID          string `json:"modelid"`
-	ZigbeeChannel    int    `json:"zigbeechannel"`
-	LinkButton       bool   `json:"linkbutton"`
+	Name             string                          `json:"name"`
+	DatastoreVersion string                          `json:"datastoreversion"`
+	SwVersion        string                          `json:"swversion"`
+	APIVersion       string                          `json:"apiversion"`
+	Mac              string                          `json:"mac"`
+	BridgeID         string                          `json:"bridgeid"`
+	FactoryNew       bool                            `json:"factorynew"`
+	ReplacesBridgeID *string                         `json:"replacesbridgeid"`
+	ModelID          string                          `json:"modelid"`
+	StarterKitID     string                          `json:"starterkitid"`
+	ZigbeeChannel    int                             `json:"zigbeechannel"`
+	LinkButton       bool                            `json:"linkbutton"`
+	UTC              string                          `json:"UTC"`
+	LocalTime        string                          `json:"localtime"`
+	Dhcp             bool                            `json:"dhcp"`
+	IPAddress        string                          `json:"ipaddress"`
+	ProxyAddress     string                          `json:"proxyaddress"`
+	ProxyPort        int                             `json:"proxyport"`
+	SwUpdate         SwUpdate                        `json:"swupdate"`
+	SwUpdate2        SwUpdate2                       `json:"swupdate2"`
+	Whitelist        map[string]ConfigWhitelistEntry `json:"whitelist"`
 }
 
 // PublicBridgeConfig is the stripped config a real bridge returns from
@@ -87,6 +150,8 @@ type Scene struct {
 	Owner       string                     `json:"owner"`
 	Recycle     bool                       `json:"recycle"`
 	Locked      bool                       `json:"locked"`
+	AppData     map[string]any             `json:"appdata"`
+	Picture     string                     `json:"picture"`
 }
 
 type ScheduleCommand struct {
@@ -96,8 +161,9 @@ type ScheduleCommand struct {
 }
 
 type Schedule struct {
-	Name      string          `json:"name"`
-	Command   ScheduleCommand `json:"command"`
-	LocalTime string          `json:"localtime"`
-	Status    string          `json:"status"`
+	Name        string          `json:"name"`
+	Description string          `json:"description"`
+	Command     ScheduleCommand `json:"command"`
+	LocalTime   string          `json:"localtime"`
+	Status      string          `json:"status"`
 }

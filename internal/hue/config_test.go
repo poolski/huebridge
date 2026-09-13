@@ -6,12 +6,16 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestConfig_GetAuthenticated(t *testing.T) {
 	wl := NewWhitelist(filepath.Join(t.TempDir(), "wl.json"))
+	if err := wl.Add(WhitelistEntry{Username: "testuser", Name: "test#app", CreateDate: time.Now()}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
 	mac, _ := net.ParseMAC("aa:bb:cc:dd:ee:ff")
-	srv := NewServer(nil, nil, wl, &PairingWindow{}, "AABBCCFFFEDDEEFF", mac, nil, nil)
+	srv := NewServer(nil, nil, wl, &PairingWindow{}, "AABBCCFFFEDDEEFF", mac, nil, nil, "192.168.1.100")
 
 	req := httptest.NewRequest("GET", "/api/testuser/config", nil)
 	rec := httptest.NewRecorder()
@@ -27,15 +31,92 @@ func TestConfig_GetAuthenticated(t *testing.T) {
 	if cfg.Mac != "aa:bb:cc:dd:ee:ff" {
 		t.Fatalf("got Mac=%q, want aa:bb:cc:dd:ee:ff", cfg.Mac)
 	}
-	if cfg.APIVersion != "1.61.0" {
-		t.Fatalf("got APIVersion=%q, want 1.61.0", cfg.APIVersion)
+	if cfg.APIVersion != currentAPIVersion {
+		t.Fatalf("got APIVersion=%q, want %s", cfg.APIVersion, currentAPIVersion)
+	}
+	if cfg.IPAddress != "192.168.1.100" {
+		t.Fatalf("got IPAddress=%q, want 192.168.1.100", cfg.IPAddress)
+	}
+	entry, ok := cfg.Whitelist["testuser"]
+	if !ok {
+		t.Fatalf("got Whitelist=%+v, want an entry for testuser", cfg.Whitelist)
+	}
+	if entry.Name != "test#app" {
+		t.Fatalf("got Whitelist[testuser].Name=%q, want test#app", entry.Name)
+	}
+	if entry.LastAccessType != "none" {
+		t.Fatalf("got Whitelist[testuser].LastAccessType=%q, want none", entry.LastAccessType)
+	}
+	if cfg.SwUpdate2.State != "noupdates" {
+		t.Fatalf("got SwUpdate2.State=%q, want noupdates", cfg.SwUpdate2.State)
+	}
+}
+
+func TestConfig_GetAuthenticatedUnrecognizedUsernameGetsStrippedConfig(t *testing.T) {
+	wl := NewWhitelist(filepath.Join(t.TempDir(), "wl.json"))
+	mac, _ := net.ParseMAC("aa:bb:cc:dd:ee:ff")
+	srv := NewServer(nil, nil, wl, &PairingWindow{}, "AABBCCFFFEDDEEFF", mac, nil, nil, "192.168.1.100")
+
+	req := httptest.NewRequest("GET", "/api/never-paired/config", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	var raw map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &raw); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if _, ok := raw["whitelist"]; ok {
+		t.Fatalf("response includes whitelist for an unrecognized username, want it stripped like GET /api/config")
+	}
+}
+
+func TestSetVersionOverrides_OnlyOverridesNonEmptyArgs(t *testing.T) {
+	origDatastore, origSw, origAPI := currentDatastoreVersion, currentSwVersion, currentAPIVersion
+	t.Cleanup(func() {
+		currentDatastoreVersion, currentSwVersion, currentAPIVersion = origDatastore, origSw, origAPI
+	})
+
+	SetVersionOverrides("", "1955082050", "")
+	if currentDatastoreVersion != origDatastore {
+		t.Fatalf("got currentDatastoreVersion=%q, want unchanged %q", currentDatastoreVersion, origDatastore)
+	}
+	if currentSwVersion != "1955082050" {
+		t.Fatalf("got currentSwVersion=%q, want 1955082050", currentSwVersion)
+	}
+	if currentAPIVersion != origAPI {
+		t.Fatalf("got currentAPIVersion=%q, want unchanged %q", currentAPIVersion, origAPI)
+	}
+
+	SetVersionOverrides("999", "", "9.9.9")
+	if currentDatastoreVersion != "999" {
+		t.Fatalf("got currentDatastoreVersion=%q, want 999", currentDatastoreVersion)
+	}
+	if currentSwVersion != "1955082050" {
+		t.Fatalf("got currentSwVersion=%q, want unchanged 1955082050 from the previous call", currentSwVersion)
+	}
+	if currentAPIVersion != "9.9.9" {
+		t.Fatalf("got currentAPIVersion=%q, want 9.9.9", currentAPIVersion)
+	}
+}
+
+func TestAPIVersion_ReflectsOverride(t *testing.T) {
+	origAPI := currentAPIVersion
+	t.Cleanup(func() { currentAPIVersion = origAPI })
+
+	if got := APIVersion(); got != origAPI {
+		t.Fatalf("got APIVersion()=%q, want default %q", got, origAPI)
+	}
+
+	SetVersionOverrides("", "", "9.9.9")
+	if got := APIVersion(); got != "9.9.9" {
+		t.Fatalf("got APIVersion()=%q, want 9.9.9 after override", got)
 	}
 }
 
 func TestConfig_GetPublicNoUsername(t *testing.T) {
 	wl := NewWhitelist(filepath.Join(t.TempDir(), "wl.json"))
 	mac, _ := net.ParseMAC("aa:bb:cc:dd:ee:ff")
-	srv := NewServer(nil, nil, wl, &PairingWindow{}, "AABBCCFFFEDDEEFF", mac, nil, nil)
+	srv := NewServer(nil, nil, wl, &PairingWindow{}, "AABBCCFFFEDDEEFF", mac, nil, nil, "192.168.1.100")
 
 	req := httptest.NewRequest("GET", "/api/config", nil)
 	rec := httptest.NewRecorder()

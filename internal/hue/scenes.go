@@ -106,6 +106,8 @@ func toScene(s StoredScene) Scene {
 		Owner:       "huebridge",
 		Recycle:     false,
 		Locked:      false,
+		AppData:     map[string]any{},
+		Picture:     "",
 	}
 }
 

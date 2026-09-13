@@ -38,15 +38,17 @@ func toGroup(ctx context.Context, reg *registry.Registry, be backend.Backend, g 
 	// keep the action consistent with it.
 	action.On = anyOn
 	return Group{
-		Name:   g.Name,
-		Lights: lights,
-		Type:   "Room",
-		Class:  g.Class,
+		Name:    g.Name,
+		Lights:  lights,
+		Sensors: []string{},
+		Type:    "Room",
+		Class:   g.Class,
 		GroupState: GroupState{
 			AllOn: allOn && len(g.EntityIDs) > 0,
 			AnyOn: anyOn,
 		},
-		Action: action,
+		Recycle: false,
+		Action:  action,
 	}
 }
 

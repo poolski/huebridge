@@ -74,6 +74,17 @@ func main() {
 	bridgePort := envIntOrDefault("HUEBRIDGE_API_PORT", defaultBridgePort)
 	logLevel := logging.ParseLevel(os.Getenv("HUEBRIDGE_LOG_LEVEL"))
 
+	// Lets the reported datastore/software/API versions be swapped at
+	// runtime instead of via a rebuild — see
+	// docs/superpowers/notes/2026-09-13-tls-pairing-failure-log.md for why
+	// that trio needs testing this often. Empty env vars leave the
+	// known-good defaults in internal/hue/config.go untouched.
+	hue.SetVersionOverrides(
+		os.Getenv("HUEBRIDGE_DATASTORE_VERSION"),
+		os.Getenv("HUEBRIDGE_SWVERSION"),
+		os.Getenv("HUEBRIDGE_APIVERSION"),
+	)
+
 	if isStandalone(os.Getenv) {
 		runStandalone(dataDir, bridgePort, logLevel)
 		return
@@ -218,6 +229,11 @@ type bridgeDeps struct {
 // shutdown.
 func runBridge(deps bridgeDeps) {
 	logMiddleware := logging.Middleware(log.Default(), deps.logLevel)
+	// The admin/ingress UI's requests and HTML responses are never useful to
+	// dump at debug level — they're the user's own browser traffic, not the
+	// Hue app's, and the response bodies are just page HTML. Always log
+	// them at the plain one-line level regardless of HUEBRIDGE_LOG_LEVEL.
+	adminLogMiddleware := logging.Middleware(log.Default(), logging.LevelInfo)
 
 	mac := lookupMAC()
 	bridgeID := bridgetls.BridgeID(mac)
@@ -232,6 +248,13 @@ func runBridge(deps bridgeDeps) {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
+	// Replaces the hardcoded swversion/apiversion fallback with whatever
+	// pair Signify's own firmware-update-check endpoint currently reports,
+	// same as Bifrost's VersionUpdater — see internal/hue/version_updater.go.
+	// A no-op for any field HUEBRIDGE_SWVERSION/HUEBRIDGE_APIVERSION already
+	// pinned above.
+	hue.StartVersionUpdater(ctx, nil)
+
 	// The Hue app polls /lights about once a second; the cache turns those
 	// polls into reads of a WebSocket-fed snapshot instead of a REST call
 	// per entity per poll.
@@ -245,9 +268,9 @@ func runBridge(deps bridgeDeps) {
 	scenes := hue.NewSceneStore(filepath.Join(deps.dataDir, "scenes.json"))
 	schedules := hue.NewScheduleStore(filepath.Join(deps.dataDir, "schedules.json"))
 
-	mux := hue.NewServer(reg, be, whitelist, pairingWindow, bridgeID, mac, scenes, schedules)
-
 	ip := resolveLocalIP()
+	mux := hue.NewServer(reg, be, whitelist, pairingWindow, bridgeID, mac, scenes, schedules, ip)
+
 	mux.HandleFunc("GET /description.xml", handleDescriptionXML(bridgeID, ip, deps.bridgePort))
 
 	ticker := hue.NewTicker(schedules, be, func(id int) (string, bool) {
@@ -277,22 +300,50 @@ func runBridge(deps bridgeDeps) {
 	})
 
 	bridgeMux := http.NewServeMux()
-	bridgeMux.Handle("/ingress/", deps.wrapAdmin(http.StripPrefix("/ingress", ingressHandler)))
-	bridgeMux.Handle("/", mux)
+	bridgeMux.Handle("/ingress/", deps.wrapAdmin(adminLogMiddleware(http.StripPrefix("/ingress", ingressHandler))))
+	bridgeMux.Handle("/", logMiddleware(mux))
 
-	cert, err := bridgetls.GenerateCertificate(bridgeID)
+	cert, err := bridgetls.LoadOrGenerateCertificate(filepath.Join(deps.dataDir, "cert.pem"), bridgeID)
 	if err != nil {
-		log.Fatalf("generate certificate: %v", err)
+		log.Fatalf("load or generate certificate: %v", err)
+	}
+
+	bridgeTLSConfig := &tls.Config{
+		Certificates: []tls.Certificate{cert},
+		// A real Hue bridge's firmware only ever speaks HTTP/1.1; net/http
+		// auto-negotiates h2 over TLS otherwise, which the official app's
+		// TLS stack has been observed aborting the handshake over.
+		NextProtos: []string{"http/1.1"},
+	}
+	// DEBUG (throwaway, see docs/superpowers/specs — TLS-abort spike): when
+	// HUEBRIDGE_TLS_KEYLOG is set, dump the per-connection TLS secrets so a
+	// concurrent tcpdump capture of the bridge port can be decrypted in
+	// Wireshark afterwards, letting us see the exact alert/record the
+	// official app sends when a handshake aborts instead of guessing from
+	// the bare "handshake error" net/http logs. Revert before merging.
+	if keylogPath := os.Getenv("HUEBRIDGE_TLS_KEYLOG"); keylogPath != "" {
+		keylogFile, err := os.OpenFile(keylogPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+		if err != nil {
+			log.Fatalf("open TLS keylog file %s: %v", keylogPath, err)
+		}
+		defer keylogFile.Close()
+		bridgeTLSConfig.KeyLogWriter = keylogFile
+		log.Printf("DEBUG: TLS keylog enabled at %s", keylogPath)
 	}
 
 	bridgeServer := &http.Server{
-		Addr:      fmt.Sprintf(":%d", deps.bridgePort),
-		Handler:   logMiddleware(bridgeMux),
-		TLSConfig: &tls.Config{Certificates: []tls.Certificate{cert}},
+		Addr:    fmt.Sprintf(":%d", deps.bridgePort),
+		Handler: bridgeMux,
+		// DEBUG (throwaway): net/http already logs handshake failures
+		// ("http: TLS handshake error from <addr>: <reason>") to whatever
+		// ErrorLog is set — this just makes sure that lands in the same
+		// place as everything else instead of os.Stderr's default.
+		ErrorLog:  log.Default(),
+		TLSConfig: bridgeTLSConfig,
 	}
 	adminServer := &http.Server{
 		Addr:    fmt.Sprintf(":%d", deps.adminPort),
-		Handler: logMiddleware(deps.wrapAdmin(ingressHandler)),
+		Handler: adminLogMiddleware(deps.wrapAdmin(ingressHandler)),
 	}
 	if deps.adminTLS {
 		adminServer.TLSConfig = &tls.Config{Certificates: []tls.Certificate{cert}}
@@ -311,7 +362,7 @@ func runBridge(deps bridgeDeps) {
 		plainHTTPListener = nil
 	}
 
-	if stopSSDP, err := discovery.StartSSDP(bridgeID, ip, deps.bridgePort); err != nil {
+	if stopSSDP, err := discovery.StartSSDP(bridgeID, ip, deps.bridgePort, hue.APIVersion()); err != nil {
 		log.Printf("warning: SSDP discovery did not start: %v", err)
 	} else {
 		defer stopSSDP()
