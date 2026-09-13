@@ -31,6 +31,13 @@ const (
 	currentAPIVersion       = "1.61.0"
 )
 
+// lastInstallDate is computed once at process start, not per-request — a
+// real bridge's last-install timestamp is a fixed past event, and
+// recomputing "7 days ago" on every single request made it creep forward
+// every second, which is exactly the kind of never-settling state a
+// client polling for update completion would keep waiting on.
+var lastInstallDate = time.Now().Add(-7 * 24 * time.Hour).Format(configTimeFormat)
+
 // noUpdatesAvailable reports the real bridge's "nothing to install" shape
 // for both the legacy and current software-update status objects. A bare
 // state:"noupdates" wasn't enough on its own — a live bridge also reports
@@ -39,13 +46,12 @@ const (
 // observed prompting the official app to push a firmware update right
 // after pairing succeeds.
 func noUpdatesAvailable() (SwUpdate, SwUpdate2) {
-	lastInstall := time.Now().Add(-7 * 24 * time.Hour).Format(configTimeFormat)
 	return SwUpdate{
 		DeviceTypes: SwUpdateDeviceTypes{Lights: []string{}, Sensors: []string{}},
 	}, SwUpdate2{
 		AutoInstall: SwUpdate2AutoInstall{On: true, UpdateTime: "T04:00:00"},
-		Bridge:      SwUpdate2Bridge{State: "noupdates", LastInstall: lastInstall},
-		LastChange:  lastInstall,
+		Bridge:      SwUpdate2Bridge{State: "noupdates", LastInstall: lastInstallDate},
+		LastChange:  lastInstallDate,
 		State:       "noupdates",
 	}
 }
