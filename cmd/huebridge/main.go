@@ -210,12 +210,12 @@ type bridgeDeps struct {
 // entry points, which differ only in how they obtain deps. Blocks until
 // shutdown.
 func runBridge(deps bridgeDeps) {
-	logMiddleware := logging.Middleware(log.Default(), deps.logLevel)
+	logMiddleware := logging.Middleware(log.Default(), deps.logLevel, "hue_api")
 	// The admin/ingress UI's requests and HTML responses are never useful to
 	// dump at debug level — they're the user's own browser traffic, not the
 	// Hue app's, and the response bodies are just page HTML. Always log
 	// them at the plain one-line level regardless of HUEBRIDGE_LOG_LEVEL.
-	adminLogMiddleware := logging.Middleware(log.Default(), logging.LevelInfo)
+	adminLogMiddleware := logging.Middleware(log.Default(), logging.LevelInfo, "admin")
 
 	mac := lookupMAC()
 	bridgeID := bridgetls.BridgeID(mac)

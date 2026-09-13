@@ -75,7 +75,7 @@ func redactHeaders(h http.Header) http.Header {
 // Middleware logs every request at the given level. At LevelDebug it reads
 // the request body up front and replaces r.Body with a fresh reader over
 // the same bytes, so downstream handlers see it unchanged.
-func Middleware(logger *log.Logger, level Level) func(http.Handler) http.Handler {
+func Middleware(logger *log.Logger, level Level, route string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			start := time.Now()
@@ -95,10 +95,10 @@ func Middleware(logger *log.Logger, level Level) func(http.Handler) http.Handler
 
 			duration := time.Since(start)
 			if level == LevelDebug {
-				logger.Printf("DEBUG %s %s status=%d duration=%s headers=%v request_body=%s response_body=%s",
-					r.Method, r.URL.Path, rec.status, duration, redactHeaders(r.Header), reqBody, rec.body.Bytes())
+				logger.Printf("DEBUG %s %s status=%d duration=%s route=%s headers=%v request_body=%s response_body=%s",
+					r.Method, r.URL.Path, rec.status, duration, route, redactHeaders(r.Header), reqBody, rec.body.Bytes())
 			} else {
-				logger.Printf("%s %s status=%d duration=%s", r.Method, r.URL.Path, rec.status, duration)
+				logger.Printf("%s %s status=%d duration=%s route=%s", r.Method, r.URL.Path, rec.status, duration, route)
 			}
 		})
 	}

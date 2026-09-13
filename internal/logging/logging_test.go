@@ -31,7 +31,7 @@ func TestMiddleware_InfoLogsMethodPathAndStatus(t *testing.T) {
 	var buf bytes.Buffer
 	logger := log.New(&buf, "", 0)
 
-	handler := Middleware(logger, LevelInfo)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := Middleware(logger, LevelInfo, "hue_api")(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusTeapot)
 	}))
 
@@ -43,8 +43,29 @@ func TestMiddleware_InfoLogsMethodPathAndStatus(t *testing.T) {
 	if !strings.Contains(out, "PUT") || !strings.Contains(out, "/lights/1/state") || !strings.Contains(out, "418") {
 		t.Fatalf("expected method, path and status in log output, got %q", out)
 	}
+	if !strings.Contains(out, "route=hue_api") {
+		t.Fatalf("expected route=hue_api in log output, got %q", out)
+	}
 	if strings.Contains(out, "on\":true") {
 		t.Fatalf("info level should not log the request body, got %q", out)
+	}
+}
+
+func TestMiddleware_LabelsRouteAdminAtInfoLevel(t *testing.T) {
+	var buf bytes.Buffer
+	logger := log.New(&buf, "", 0)
+
+	handler := Middleware(logger, LevelInfo, "admin")(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest("GET", "/ingress/", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	out := buf.String()
+	if !strings.Contains(out, "route=admin") {
+		t.Fatalf("expected route=admin in log output, got %q", out)
 	}
 }
 
@@ -52,7 +73,7 @@ func TestMiddleware_DebugLogsRequestAndResponseBodies(t *testing.T) {
 	var buf bytes.Buffer
 	logger := log.New(&buf, "", 0)
 
-	handler := Middleware(logger, LevelDebug)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := Middleware(logger, LevelDebug, "hue_api")(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := readAll(r)
 		if string(body) != `{"on":true}` {
 			t.Fatalf("handler did not receive the original request body, got %q", body)
@@ -77,7 +98,7 @@ func TestMiddleware_DebugRedactsAuthorizationAndCookieHeaders(t *testing.T) {
 	var buf bytes.Buffer
 	logger := log.New(&buf, "", 0)
 
-	handler := Middleware(logger, LevelDebug)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := Middleware(logger, LevelDebug, "admin")(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
