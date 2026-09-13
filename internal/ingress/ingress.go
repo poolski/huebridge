@@ -20,9 +20,27 @@ type groupView struct {
 }
 
 type indexData struct {
-	Entries   []registry.Entry
-	Groups    []groupView
-	Available []string
+	Entries        []registry.Entry
+	Groups         []groupView
+	Available      []string
+	CurrentVersion hue.VersionTriple
+	KnownVersions  []hue.VersionTriple
+}
+
+// versionOptionValue encodes v as a single <option value> so the three
+// fields survive a form round-trip together, never mixed with another
+// triple's field.
+func versionOptionValue(v hue.VersionTriple) string {
+	return v.DatastoreVersion + "|" + v.SwVersion + "|" + v.APIVersion
+}
+
+// parseVersionOptionValue reverses versionOptionValue.
+func parseVersionOptionValue(s string) (hue.VersionTriple, bool) {
+	parts := strings.SplitN(s, "|", 3)
+	if len(parts) != 3 {
+		return hue.VersionTriple{}, false
+	}
+	return hue.VersionTriple{DatastoreVersion: parts[0], SwVersion: parts[1], APIVersion: parts[2]}, true
 }
 
 // redirectHome sends the browser back to the index. Home Assistant serves
@@ -38,7 +56,7 @@ func redirectHome(w http.ResponseWriter, r *http.Request) {
 // entity ids the picker offers — supplied as a func rather than a fixed
 // list so the caller can refresh it from HA's entity registry on each page
 // load without this package depending on the HA client directly.
-func NewHandler(reg *registry.Registry, win *hue.PairingWindow, availableEntities func() []string) http.Handler {
+func NewHandler(reg *registry.Registry, win *hue.PairingWindow, versions *hue.VersionStore, availableEntities func() []string) http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
@@ -62,9 +80,11 @@ func NewHandler(reg *registry.Registry, win *hue.PairingWindow, availableEntitie
 		}
 
 		indexTemplate.Execute(w, indexData{
-			Entries:   entries,
-			Groups:    groups,
-			Available: availableEntities(),
+			Entries:        entries,
+			Groups:         groups,
+			Available:      availableEntities(),
+			CurrentVersion: versions.Current(),
+			KnownVersions:  hue.KnownVersions,
 		})
 	})
 
@@ -122,6 +142,23 @@ func NewHandler(reg *registry.Registry, win *hue.PairingWindow, availableEntitie
 
 	mux.HandleFunc("POST /pairing/allow", func(w http.ResponseWriter, r *http.Request) {
 		win.Open(30 * time.Second)
+		redirectHome(w, r)
+	})
+
+	mux.HandleFunc("POST /version", func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			http.Error(w, "invalid form", http.StatusBadRequest)
+			return
+		}
+		v, ok := parseVersionOptionValue(r.FormValue("version"))
+		if !ok {
+			http.Error(w, "version is required", http.StatusBadRequest)
+			return
+		}
+		if err := versions.Set(v); err != nil {
+			http.Error(w, "not a recognized version: "+err.Error(), http.StatusBadRequest)
+			return
+		}
 		redirectHome(w, r)
 	})
 

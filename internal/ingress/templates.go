@@ -204,6 +204,18 @@ var indexTemplate = template.Must(template.New("index").Parse(`
 		</section>
 
 		<section>
+			<h2>Bridge version</h2>
+			<p class="hint">Reported to the Hue app via GET /api/config. Only versions real Signify bridges have shipped are offered — an unrecognized combination makes the official app nag for an update it can never deliver.</p>
+			<p>Current: <strong>datastoreversion {{.CurrentVersion.DatastoreVersion}}, swversion {{.CurrentVersion.SwVersion}}, apiversion {{.CurrentVersion.APIVersion}}</strong></p>
+			<form method="POST" action="version">
+				<select name="version">
+					{{$current := .CurrentVersion}}{{range .KnownVersions}}<option value="{{.DatastoreVersion}}|{{.SwVersion}}|{{.APIVersion}}"{{if and (eq .DatastoreVersion $current.DatastoreVersion) (eq .SwVersion $current.SwVersion) (eq .APIVersion $current.APIVersion)}} selected{{end}}>apiversion {{.APIVersion}} (swversion {{.SwVersion}}, datastoreversion {{.DatastoreVersion}})</option>{{end}}
+				</select>
+				<button type="submit">Set version</button>
+			</form>
+		</section>
+
+		<section>
 			<h2>Groups</h2>
 			{{if .Groups}}
 			<ul class="plain">

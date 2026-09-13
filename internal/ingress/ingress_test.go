@@ -14,7 +14,8 @@ import (
 func TestIngress_AddEntityRegistersIt(t *testing.T) {
 	reg, _ := registry.NewRegistry(filepath.Join(t.TempDir(), "registry.json"))
 	win := &hue.PairingWindow{}
-	h := NewHandler(reg, win, func() []string { return []string{"light.kitchen", "light.hall"} })
+	versions := hue.NewVersionStore(filepath.Join(t.TempDir(), "version.json"))
+	h := NewHandler(reg, win, versions, func() []string { return []string{"light.kitchen", "light.hall"} })
 
 	form := url.Values{"entity_id": {"light.kitchen"}, "name": {"Kitchen"}}
 	req := httptest.NewRequest("POST", "/entities", strings.NewReader(form.Encode()))
@@ -34,7 +35,8 @@ func TestIngress_AddEntityRegistersIt(t *testing.T) {
 func TestIngress_DeleteEntityRemovesIt(t *testing.T) {
 	reg, _ := registry.NewRegistry(filepath.Join(t.TempDir(), "registry.json"))
 	reg.Add("light.kitchen", "Kitchen")
-	h := NewHandler(reg, &hue.PairingWindow{}, func() []string { return nil })
+	versions := hue.NewVersionStore(filepath.Join(t.TempDir(), "version.json"))
+	h := NewHandler(reg, &hue.PairingWindow{}, versions, func() []string { return nil })
 
 	req := httptest.NewRequest("POST", "/entities/light.kitchen/delete", nil)
 	rec := httptest.NewRecorder()
@@ -51,7 +53,8 @@ func TestIngress_DeleteEntityRemovesIt(t *testing.T) {
 func TestIngress_AllowPairingOpensWindow(t *testing.T) {
 	reg, _ := registry.NewRegistry(filepath.Join(t.TempDir(), "registry.json"))
 	win := &hue.PairingWindow{}
-	h := NewHandler(reg, win, func() []string { return nil })
+	versions := hue.NewVersionStore(filepath.Join(t.TempDir(), "version.json"))
+	h := NewHandler(reg, win, versions, func() []string { return nil })
 
 	req := httptest.NewRequest("POST", "/pairing/allow", nil)
 	rec := httptest.NewRecorder()
@@ -66,7 +69,8 @@ func TestIngress_IndexListsRegisteredEntities(t *testing.T) {
 	reg, _ := registry.NewRegistry(filepath.Join(t.TempDir(), "registry.json"))
 	reg.Add("light.kitchen", "Kitchen")
 	win := &hue.PairingWindow{}
-	h := NewHandler(reg, win, func() []string { return nil })
+	versions := hue.NewVersionStore(filepath.Join(t.TempDir(), "version.json"))
+	h := NewHandler(reg, win, versions, func() []string { return nil })
 
 	req := httptest.NewRequest("GET", "/", nil)
 	rec := httptest.NewRecorder()
@@ -81,7 +85,8 @@ func TestIngress_CreateGroupRegistersIt(t *testing.T) {
 	reg, _ := registry.NewRegistry(filepath.Join(t.TempDir(), "registry.json"))
 	reg.Add("light.kitchen", "Kitchen")
 	reg.Add("light.hall", "Hall")
-	h := NewHandler(reg, &hue.PairingWindow{}, func() []string { return nil })
+	versions := hue.NewVersionStore(filepath.Join(t.TempDir(), "version.json"))
+	h := NewHandler(reg, &hue.PairingWindow{}, versions, func() []string { return nil })
 
 	form := url.Values{
 		"name":      {"Downstairs"},
@@ -108,7 +113,8 @@ func TestIngress_CreateGroupRegistersIt(t *testing.T) {
 
 func TestIngress_CreateGroupRequiresMembers(t *testing.T) {
 	reg, _ := registry.NewRegistry(filepath.Join(t.TempDir(), "registry.json"))
-	h := NewHandler(reg, &hue.PairingWindow{}, func() []string { return nil })
+	versions := hue.NewVersionStore(filepath.Join(t.TempDir(), "version.json"))
+	h := NewHandler(reg, &hue.PairingWindow{}, versions, func() []string { return nil })
 
 	form := url.Values{"name": {"Empty"}}
 	req := httptest.NewRequest("POST", "/groups", strings.NewReader(form.Encode()))
@@ -125,7 +131,8 @@ func TestIngress_IndexListsGroups(t *testing.T) {
 	reg, _ := registry.NewRegistry(filepath.Join(t.TempDir(), "registry.json"))
 	reg.Add("light.kitchen", "Kitchen")
 	reg.AddGroup("Downstairs", "Living room", []string{"light.kitchen"})
-	h := NewHandler(reg, &hue.PairingWindow{}, func() []string { return nil })
+	versions := hue.NewVersionStore(filepath.Join(t.TempDir(), "version.json"))
+	h := NewHandler(reg, &hue.PairingWindow{}, versions, func() []string { return nil })
 
 	req := httptest.NewRequest("GET", "/", nil)
 	rec := httptest.NewRecorder()
@@ -139,7 +146,8 @@ func TestIngress_IndexListsGroups(t *testing.T) {
 
 func TestIngress_RedirectRespectsIngressPathPrefix(t *testing.T) {
 	reg, _ := registry.NewRegistry(filepath.Join(t.TempDir(), "registry.json"))
-	h := NewHandler(reg, &hue.PairingWindow{}, func() []string { return nil })
+	versions := hue.NewVersionStore(filepath.Join(t.TempDir(), "version.json"))
+	h := NewHandler(reg, &hue.PairingWindow{}, versions, func() []string { return nil })
 
 	req := httptest.NewRequest("POST", "/pairing/allow", nil)
 	req.Header.Set("X-Ingress-Path", "/api/hassio_ingress/abc123")
@@ -153,7 +161,8 @@ func TestIngress_RedirectRespectsIngressPathPrefix(t *testing.T) {
 
 func TestIngress_RedirectFallsBackToRootWithoutHeader(t *testing.T) {
 	reg, _ := registry.NewRegistry(filepath.Join(t.TempDir(), "registry.json"))
-	h := NewHandler(reg, &hue.PairingWindow{}, func() []string { return nil })
+	versions := hue.NewVersionStore(filepath.Join(t.TempDir(), "version.json"))
+	h := NewHandler(reg, &hue.PairingWindow{}, versions, func() []string { return nil })
 
 	req := httptest.NewRequest("POST", "/pairing/allow", nil)
 	rec := httptest.NewRecorder()
@@ -161,5 +170,45 @@ func TestIngress_RedirectFallsBackToRootWithoutHeader(t *testing.T) {
 
 	if got := rec.Header().Get("Location"); got != "/" {
 		t.Fatalf("got Location=%q, want \"/\"", got)
+	}
+}
+
+func TestIngress_SetVersionAppliesAKnownVersion(t *testing.T) {
+	reg, _ := registry.NewRegistry(filepath.Join(t.TempDir(), "registry.json"))
+	versions := hue.NewVersionStore(filepath.Join(t.TempDir(), "version.json"))
+	h := NewHandler(reg, &hue.PairingWindow{}, versions, func() []string { return nil })
+
+	want := hue.KnownVersions[0]
+	form := url.Values{"version": {want.DatastoreVersion + "|" + want.SwVersion + "|" + want.APIVersion}}
+	req := httptest.NewRequest("POST", "/version", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != 303 {
+		t.Fatalf("got status %d, want 303 (redirect back to the picker)", rec.Code)
+	}
+	if got := versions.Current(); got != want {
+		t.Fatalf("got current version %+v, want %+v", got, want)
+	}
+}
+
+func TestIngress_SetVersionRejectsUnknownVersion(t *testing.T) {
+	reg, _ := registry.NewRegistry(filepath.Join(t.TempDir(), "registry.json"))
+	versions := hue.NewVersionStore(filepath.Join(t.TempDir(), "version.json"))
+	h := NewHandler(reg, &hue.PairingWindow{}, versions, func() []string { return nil })
+
+	before := versions.Current()
+	form := url.Values{"version": {"1|not-a-real-build|9.9.9"}}
+	req := httptest.NewRequest("POST", "/version", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != 400 {
+		t.Fatalf("got status %d, want 400 for an unrecognized version", rec.Code)
+	}
+	if got := versions.Current(); got != before {
+		t.Fatalf("a rejected version change must not alter the reported version: got %+v, want %+v", got, before)
 	}
 }

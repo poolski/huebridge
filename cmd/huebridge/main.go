@@ -74,17 +74,6 @@ func main() {
 	bridgePort := envIntOrDefault("HUEBRIDGE_API_PORT", defaultBridgePort)
 	logLevel := logging.ParseLevel(os.Getenv("HUEBRIDGE_LOG_LEVEL"))
 
-	// Lets the reported datastore/software/API versions be swapped at
-	// runtime instead of via a rebuild — see
-	// docs/superpowers/notes/2026-09-13-tls-pairing-failure-log.md for why
-	// that trio needs testing this often. Empty env vars leave the
-	// known-good defaults in internal/hue/config.go untouched.
-	hue.SetVersionOverrides(
-		os.Getenv("HUEBRIDGE_DATASTORE_VERSION"),
-		os.Getenv("HUEBRIDGE_SWVERSION"),
-		os.Getenv("HUEBRIDGE_APIVERSION"),
-	)
-
 	if isStandalone(os.Getenv) {
 		runStandalone(dataDir, bridgePort, logLevel)
 		return
@@ -245,6 +234,22 @@ func runBridge(deps bridgeDeps) {
 	whitelist := hue.NewWhitelist(filepath.Join(deps.dataDir, "whitelist.json"))
 	pairingWindow := &hue.PairingWindow{}
 
+	versions := hue.NewVersionStore(filepath.Join(deps.dataDir, "version.json"))
+	if err := versions.Load(); err != nil {
+		log.Printf("load persisted version selection: %v", err)
+	}
+	// Lets the reported datastore/software/API versions be swapped at
+	// runtime instead of via a rebuild — see
+	// docs/superpowers/notes/2026-09-13-tls-pairing-failure-log.md for why
+	// that trio needs testing this often. Applied after the persisted
+	// admin selection so an explicit env var always wins for this run;
+	// empty env vars leave whatever versions.Load() set untouched.
+	hue.SetVersionOverrides(
+		os.Getenv("HUEBRIDGE_DATASTORE_VERSION"),
+		os.Getenv("HUEBRIDGE_SWVERSION"),
+		os.Getenv("HUEBRIDGE_APIVERSION"),
+	)
+
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
@@ -272,7 +277,7 @@ func runBridge(deps bridgeDeps) {
 	})
 	go runTicker(ctx, ticker)
 
-	ingressHandler := ingress.NewHandler(reg, pairingWindow, func() []string {
+	ingressHandler := ingress.NewHandler(reg, pairingWindow, versions, func() []string {
 		listCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 		defer cancel()
 		entities, err := be.ListEntities(listCtx)
