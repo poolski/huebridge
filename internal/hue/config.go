@@ -15,33 +15,37 @@ import (
 // docs/superpowers/specs/hue-clip-v1-api-reference.md, "Config".
 const configTimeFormat = "2006-01-02T15:04:05"
 
-// currentDatastoreVersion/currentSwVersion/currentAPIVersion had two failed
-// extremes: matching a real bridge's *current* firmware (1978293000/1.78.0)
-// made the official app silently refuse to poll for pairing at all, and an
-// arbitrary much older placeholder (1000000000/1.61.0) let pairing succeed
-// but then made the app decide the firmware was old enough to force a push
-// ("Preparing... we prepare the update"). diyHue's own default
-// (1967054020/1.67.0) is the proven middle ground: actively used with the
-// official app for years, close enough to current firmware to not look
-// update-worthy, but apparently distinct enough from the real current value
-// to not trip whatever check blocked pairing.
+// currentDatastoreVersion/currentSwVersion/currentAPIVersion: matching a
+// real bridge's *current* firmware (1978293000/1.78.0) made the official
+// app silently refuse to poll for pairing at all. diyHue's own default
+// (1967054020/1.67.0), despite being proven compatible for years, did the
+// same in testing tonight. Only this older placeholder actually let
+// pairing complete — the app then wanted to push a firmware update
+// post-pairing, which noUpdatesAvailable's more complete swupdate2 below
+// (matching real update-history fields a live bridge reports) is meant to
+// suppress instead of chasing the version number further.
 const (
 	currentDatastoreVersion = "126"
-	currentSwVersion        = "1967054020"
-	currentAPIVersion       = "1.67.0"
+	currentSwVersion        = "1000000000"
+	currentAPIVersion       = "1.61.0"
 )
 
 // noUpdatesAvailable reports the real bridge's "nothing to install" shape
-// for both the legacy and current software-update status objects. Its
-// absence has been observed causing clients to treat an update as
-// available and attempt to push one to POST /updater, which huebridge has
-// no real firmware to accept.
+// for both the legacy and current software-update status objects. A bare
+// state:"noupdates" wasn't enough on its own — a live bridge also reports
+// autoinstall enabled and a real past lastchange/lastinstall date, and
+// leaving those at their zero values (no update history at all) has been
+// observed prompting the official app to push a firmware update right
+// after pairing succeeds.
 func noUpdatesAvailable() (SwUpdate, SwUpdate2) {
+	lastInstall := time.Now().Add(-7 * 24 * time.Hour).Format(configTimeFormat)
 	return SwUpdate{
 		DeviceTypes: SwUpdateDeviceTypes{Lights: []string{}, Sensors: []string{}},
 	}, SwUpdate2{
-		Bridge: SwUpdate2Bridge{State: "noupdates"},
-		State:  "noupdates",
+		AutoInstall: SwUpdate2AutoInstall{On: true, UpdateTime: "T04:00:00"},
+		Bridge:      SwUpdate2Bridge{State: "noupdates", LastInstall: lastInstall},
+		LastChange:  lastInstall,
+		State:       "noupdates",
 	}
 }
 
