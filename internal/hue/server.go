@@ -42,13 +42,17 @@ func NewServer(reg *registry.Registry, be backend.Backend, wl *Whitelist, win *P
 		mux.HandleFunc(pattern, requireUser(wl, h))
 	}
 
-	// GET /api/{username}/config is deliberately NOT behind requireUser.
-	// The Hue app reads it with a throwaway username before it has paired,
-	// to identify the bridge; a real bridge answers an unrecognized user
-	// with a stripped config rather than an error (see
+	// GET /api/config and GET /api/{username}/config are deliberately NOT
+	// behind requireUser. Real bridges answer the no-username form
+	// unauthenticated too (some clients, e.g. Hue Essentials, probe it
+	// directly before pairing), and the app also reads the {username} form
+	// with a throwaway username before it has paired, to identify the
+	// bridge; a real bridge answers an unrecognized user with a stripped
+	// config rather than an error (see
 	// docs/superpowers/specs/hue-clip-v1-api-reference.md, "Config"). The
 	// payload we serve is already that stripped subset — no whitelist, no
 	// network details.
+	mux.HandleFunc("GET /api/config", handleGetConfig(bridgeID, mac, win))
 	mux.HandleFunc("GET /api/{username}/config", handleGetConfig(bridgeID, mac, win))
 
 	if reg != nil && be != nil {
