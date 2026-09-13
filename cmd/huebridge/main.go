@@ -296,7 +296,22 @@ func runBridge(deps bridgeDeps) {
 		// A real Hue bridge's firmware only ever speaks HTTP/1.1; net/http
 		// auto-negotiates h2 over TLS otherwise, which the official app's
 		// TLS stack has been observed aborting the handshake over.
-		TLSConfig: &tls.Config{Certificates: []tls.Certificate{cert}, NextProtos: []string{"http/1.1"}},
+		TLSConfig: &tls.Config{
+			Certificates: []tls.Certificate{cert},
+			NextProtos:   []string{"http/1.1"},
+			// TEMPORARY: the official Hue app's TLS handshake to this port
+			// aborts with a bare EOF (no alert) right after a successful
+			// plain-HTTP GET /api/config, and three targeted guesses at why
+			// (cert extensions, disabling h2, cert persistence) haven't
+			// changed that. Log what it actually offers in its ClientHello
+			// instead of guessing further. Remove once the cause is found.
+			GetConfigForClient: func(hello *tls.ClientHelloInfo) (*tls.Config, error) {
+				log.Printf("TLS ClientHello from %s: server_name=%q versions=%v ciphers=%v curves=%v points=%v alpn=%v",
+					hello.Conn.RemoteAddr(), hello.ServerName, hello.SupportedVersions, hello.CipherSuites,
+					hello.SupportedCurves, hello.SupportedPoints, hello.SupportedProtos)
+				return nil, nil
+			},
+		},
 	}
 	adminServer := &http.Server{
 		Addr:    fmt.Sprintf(":%d", deps.adminPort),
