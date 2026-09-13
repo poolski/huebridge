@@ -11,14 +11,15 @@ import (
 // combination and, if it doesn't recognize it, nags for an update that a
 // non-genuine bridge can never actually deliver — see
 // docs/superpowers/notes/2026-09-13-tls-pairing-failure-log.md for the full
-// investigation. The defaults below are a real, currently-live bridge's
-// reported triple (queried directly). Overridable at runtime via
-// SetVersionOverrides so a stale default doesn't need a rebuild to fix as
-// Signify ships new firmware.
+// investigation. Bumping this triple to match a real live bridge's reported
+// values did not unblock pairing (see
+// docs/superpowers/notes/2026-09-13-android-emulator-repro-log.md, Finding 2),
+// so these are reverted to the original defaults pending further
+// investigation. Overridable at runtime via SetVersionOverrides.
 var (
-	currentDatastoreVersion = "197"
-	currentSwVersion        = "1978293000"
-	currentAPIVersion       = "1.78.0"
+	currentDatastoreVersion = "126"
+	currentSwVersion        = "1000000000"
+	currentAPIVersion       = "1.61.0"
 )
 
 // SetVersionOverrides replaces currentDatastoreVersion/currentSwVersion/
