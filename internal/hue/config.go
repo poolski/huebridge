@@ -15,19 +15,19 @@ import (
 // docs/superpowers/specs/hue-clip-v1-api-reference.md, "Config".
 const configTimeFormat = "2006-01-02T15:04:05"
 
-// currentDatastoreVersion/currentSwVersion/currentAPIVersion: apiversion
-// 1.78.0 and diyHue's own long-proven 1.67.0 both made the official app
-// silently refuse to poll for pairing; only 1.61.0 let pairing complete —
-// pointing at an apiversion compatibility threshold somewhere between
-// 1.61 and 1.67, independent of swversion. swversion here is the real
-// current firmware value (confirmed via
-// https://firmware.meethue.com/v1/checkupdate?deviceTypeId=BSB002&version=1978293000
-// to have zero updates available), decoupled from apiversion so it
-// doesn't also prompt a firmware push post-pairing the way an
-// old-looking swversion did.
+// currentDatastoreVersion/currentSwVersion/currentAPIVersion: pairing the
+// proven-working apiversion (1.61.0) with the real current swversion
+// (1978293000) still failed to poll — ruling out apiversion alone as the
+// gate. The official app most likely validates apiversion/swversion as a
+// plausible matched pair from the same real firmware release, not each
+// independently, so an old apiversion with a brand new swversion looks
+// just as invalid as a too-new apiversion did. 1000000000/1.61.0 remains
+// the only combination that's actually paired; noUpdatesAvailable's more
+// complete swupdate2 (below) is the intended fix for the post-pair
+// forced-update prompt that value causes, rather than the version numbers.
 const (
 	currentDatastoreVersion = "126"
-	currentSwVersion        = "1978293000"
+	currentSwVersion        = "1000000000"
 	currentAPIVersion       = "1.61.0"
 )
 
