@@ -355,7 +355,7 @@ func runBridge(deps bridgeDeps) {
 		plainHTTPListener = nil
 	}
 
-	if stopSSDP, err := discovery.StartSSDP(bridgeID, ip, deps.bridgePort); err != nil {
+	if stopSSDP, err := discovery.StartSSDP(bridgeID, ip, deps.bridgePort, hue.APIVersion()); err != nil {
 		log.Printf("warning: SSDP discovery did not start: %v", err)
 	} else {
 		defer stopSSDP()

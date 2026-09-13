@@ -48,6 +48,14 @@ func SetVersionOverrides(datastoreVersion, swVersion, apiVersion string) {
 	}
 }
 
+// APIVersion returns the currently reported apiversion, reflecting any
+// SetVersionOverrides call — used by discovery.StartSSDP so its SERVER
+// header agrees with the CLIP API instead of carrying an independent,
+// driftable version string.
+func APIVersion() string {
+	return currentAPIVersion
+}
+
 // lastInstallDate is computed once at process start, not per-request — a
 // real bridge's last-install timestamp is a fixed past event, and
 // recomputing "7 days ago" on every single request made it creep forward

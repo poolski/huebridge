@@ -99,6 +99,20 @@ func TestSetVersionOverrides_OnlyOverridesNonEmptyArgs(t *testing.T) {
 	}
 }
 
+func TestAPIVersion_ReflectsOverride(t *testing.T) {
+	origAPI := currentAPIVersion
+	t.Cleanup(func() { currentAPIVersion = origAPI })
+
+	if got := APIVersion(); got != origAPI {
+		t.Fatalf("got APIVersion()=%q, want default %q", got, origAPI)
+	}
+
+	SetVersionOverrides("", "", "9.9.9")
+	if got := APIVersion(); got != "9.9.9" {
+		t.Fatalf("got APIVersion()=%q, want 9.9.9 after override", got)
+	}
+}
+
 func TestConfig_GetPublicNoUsername(t *testing.T) {
 	wl := NewWhitelist(filepath.Join(t.TempDir(), "wl.json"))
 	mac, _ := net.ParseMAC("aa:bb:cc:dd:ee:ff")

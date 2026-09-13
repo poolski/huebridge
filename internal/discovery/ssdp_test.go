@@ -19,3 +19,11 @@ func TestSSDPUSN(t *testing.T) {
 		t.Fatalf("got %q, want %q", got, want)
 	}
 }
+
+func TestSSDPServerHeader(t *testing.T) {
+	got := ssdpServerHeader("1.49.0")
+	want := "huebridge/1.0 UPnP/1.0 IpBridge/1.49.0"
+	if got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+}
