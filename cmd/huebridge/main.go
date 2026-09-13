@@ -291,9 +291,12 @@ func runBridge(deps bridgeDeps) {
 	}
 
 	bridgeServer := &http.Server{
-		Addr:      fmt.Sprintf(":%d", deps.bridgePort),
-		Handler:   bridgeMux,
-		TLSConfig: &tls.Config{Certificates: []tls.Certificate{cert}},
+		Addr:    fmt.Sprintf(":%d", deps.bridgePort),
+		Handler: bridgeMux,
+		// A real Hue bridge's firmware only ever speaks HTTP/1.1; net/http
+		// auto-negotiates h2 over TLS otherwise, which the official app's
+		// TLS stack has been observed aborting the handshake over.
+		TLSConfig: &tls.Config{Certificates: []tls.Certificate{cert}, NextProtos: []string{"http/1.1"}},
 	}
 	adminServer := &http.Server{
 		Addr:    fmt.Sprintf(":%d", deps.adminPort),
