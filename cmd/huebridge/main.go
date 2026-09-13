@@ -299,6 +299,15 @@ func runBridge(deps bridgeDeps) {
 		TLSConfig: &tls.Config{
 			Certificates: []tls.Certificate{cert},
 			NextProtos:   []string{"http/1.1"},
+			// TEMPORARY: the official app's firmware-push connection
+			// consistently aborts right after our ServerHello/Certificate,
+			// on every attempt, while its ordinary polling connections
+			// succeed constantly — a plausible reason is that path expects
+			// mutual TLS (a client certificate) as an anti-tampering
+			// measure for something as sensitive as a firmware update.
+			// RequestClientCert asks for one without requiring it, so this
+			// is safe for every other client. Remove if this doesn't help.
+			ClientAuth: tls.RequestClientCert,
 		},
 	}
 	adminServer := &http.Server{
