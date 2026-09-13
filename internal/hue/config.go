@@ -15,19 +15,20 @@ import (
 // docs/superpowers/specs/hue-clip-v1-api-reference.md, "Config".
 const configTimeFormat = "2006-01-02T15:04:05"
 
-// currentDatastoreVersion/currentSwVersion/currentAPIVersion were bumped to
-// match a real BSB002 bridge's *current* firmware (confirmed live against
-// GET /api/<user>/config), on the theory that an old-looking version might
-// prompt a firmware push (see noUpdatesAvailable). That didn't fix the
-// official app's refusal to poll for pairing, and diyHue — long known to
-// work with the official app — reports much older-looking defaults
-// (swversion 1967054020, apiversion 1.67.0) despite being actively
-// maintained. Reverted to the older placeholder values pending evidence
-// that a specific version actually matters here.
+// currentDatastoreVersion/currentSwVersion/currentAPIVersion had two failed
+// extremes: matching a real bridge's *current* firmware (1978293000/1.78.0)
+// made the official app silently refuse to poll for pairing at all, and an
+// arbitrary much older placeholder (1000000000/1.61.0) let pairing succeed
+// but then made the app decide the firmware was old enough to force a push
+// ("Preparing... we prepare the update"). diyHue's own default
+// (1967054020/1.67.0) is the proven middle ground: actively used with the
+// official app for years, close enough to current firmware to not look
+// update-worthy, but apparently distinct enough from the real current value
+// to not trip whatever check blocked pairing.
 const (
 	currentDatastoreVersion = "126"
-	currentSwVersion        = "1000000000"
-	currentAPIVersion       = "1.61.0"
+	currentSwVersion        = "1967054020"
+	currentAPIVersion       = "1.67.0"
 )
 
 // noUpdatesAvailable reports the real bridge's "nothing to install" shape
