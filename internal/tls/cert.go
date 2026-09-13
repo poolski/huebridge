@@ -14,6 +14,7 @@ import (
 	"encoding/hex"
 	"encoding/pem"
 	"fmt"
+	"log"
 	"math/big"
 	"net"
 	"os"
@@ -83,7 +84,15 @@ func GenerateCertificate(bridgeID string) (tls.Certificate, error) {
 // remembers what it saw on a previous connection.
 func LoadOrGenerateCertificate(path, bridgeID string) (tls.Certificate, error) {
 	if cert, err := loadCertificate(path); err == nil {
-		return cert, nil
+		switch existingID, ok := certCommonName(cert); {
+		case !ok:
+			// Loaded fine but couldn't be parsed to check its CN — treat it
+			// like "no cert yet" and regenerate silently below.
+		case existingID == bridgeID:
+			return cert, nil
+		default:
+			log.Printf("regenerating TLS certificate at %s: its CN %q no longer matches the current bridge id %q (the MAC address it was derived from must have changed) — the official Hue app verifies the certificate against the bridge id it discovers via mDNS/SSDP, so a stale cert would silently fail pairing", path, existingID, bridgeID)
+		}
 	}
 
 	cert, err := GenerateCertificate(bridgeID)
@@ -94,6 +103,20 @@ func LoadOrGenerateCertificate(path, bridgeID string) (tls.Certificate, error) {
 		return tls.Certificate{}, fmt.Errorf("persist certificate to %s: %w", path, err)
 	}
 	return cert, nil
+}
+
+// certCommonName returns the Subject CommonName of cert's leaf certificate —
+// the bridge id it was generated for, per GenerateCertificate — or false if
+// it can't be parsed.
+func certCommonName(cert tls.Certificate) (string, bool) {
+	if len(cert.Certificate) == 0 {
+		return "", false
+	}
+	leaf, err := x509.ParseCertificate(cert.Certificate[0])
+	if err != nil {
+		return "", false
+	}
+	return leaf.Subject.CommonName, true
 }
 
 // loadCertificate reads a certificate+key pair written by saveCertificate.
