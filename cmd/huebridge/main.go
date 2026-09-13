@@ -218,6 +218,11 @@ type bridgeDeps struct {
 // shutdown.
 func runBridge(deps bridgeDeps) {
 	logMiddleware := logging.Middleware(log.Default(), deps.logLevel)
+	// The admin/ingress UI's requests and HTML responses are never useful to
+	// dump at debug level — they're the user's own browser traffic, not the
+	// Hue app's, and the response bodies are just page HTML. Always log
+	// them at the plain one-line level regardless of HUEBRIDGE_LOG_LEVEL.
+	adminLogMiddleware := logging.Middleware(log.Default(), logging.LevelInfo)
 
 	mac := lookupMAC()
 	bridgeID := bridgetls.BridgeID(mac)
@@ -277,8 +282,8 @@ func runBridge(deps bridgeDeps) {
 	})
 
 	bridgeMux := http.NewServeMux()
-	bridgeMux.Handle("/ingress/", deps.wrapAdmin(http.StripPrefix("/ingress", ingressHandler)))
-	bridgeMux.Handle("/", mux)
+	bridgeMux.Handle("/ingress/", deps.wrapAdmin(adminLogMiddleware(http.StripPrefix("/ingress", ingressHandler))))
+	bridgeMux.Handle("/", logMiddleware(mux))
 
 	cert, err := bridgetls.GenerateCertificate(bridgeID)
 	if err != nil {
@@ -287,12 +292,12 @@ func runBridge(deps bridgeDeps) {
 
 	bridgeServer := &http.Server{
 		Addr:      fmt.Sprintf(":%d", deps.bridgePort),
-		Handler:   logMiddleware(bridgeMux),
+		Handler:   bridgeMux,
 		TLSConfig: &tls.Config{Certificates: []tls.Certificate{cert}},
 	}
 	adminServer := &http.Server{
 		Addr:    fmt.Sprintf(":%d", deps.adminPort),
-		Handler: logMiddleware(deps.wrapAdmin(ingressHandler)),
+		Handler: adminLogMiddleware(deps.wrapAdmin(ingressHandler)),
 	}
 	if deps.adminTLS {
 		adminServer.TLSConfig = &tls.Config{Certificates: []tls.Certificate{cert}}
