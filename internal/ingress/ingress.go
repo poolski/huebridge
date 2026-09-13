@@ -20,11 +20,13 @@ type groupView struct {
 }
 
 type indexData struct {
-	Entries        []registry.Entry
-	Groups         []groupView
-	Available      []string
-	CurrentVersion hue.VersionTriple
-	KnownVersions  []hue.VersionTriple
+	Entries         []registry.Entry
+	Groups          []groupView
+	Available       []string
+	CurrentVersion  hue.VersionTriple
+	KnownVersions   []hue.VersionTriple
+	CurrentTimezone string
+	CommonTimezones []string
 }
 
 // versionOptionValue encodes v as a single <option value> so the three
@@ -56,7 +58,7 @@ func redirectHome(w http.ResponseWriter, r *http.Request) {
 // entity ids the picker offers — supplied as a func rather than a fixed
 // list so the caller can refresh it from HA's entity registry on each page
 // load without this package depending on the HA client directly.
-func NewHandler(reg *registry.Registry, win *hue.PairingWindow, versions *hue.VersionStore, availableEntities func() []string) http.Handler {
+func NewHandler(reg *registry.Registry, win *hue.PairingWindow, versions *hue.VersionStore, timezones *hue.TimezoneStore, availableEntities func() []string) http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
@@ -80,11 +82,13 @@ func NewHandler(reg *registry.Registry, win *hue.PairingWindow, versions *hue.Ve
 		}
 
 		indexTemplate.Execute(w, indexData{
-			Entries:        entries,
-			Groups:         groups,
-			Available:      availableEntities(),
-			CurrentVersion: versions.Current(),
-			KnownVersions:  hue.KnownVersions,
+			Entries:         entries,
+			Groups:          groups,
+			Available:       availableEntities(),
+			CurrentVersion:  versions.Current(),
+			KnownVersions:   hue.KnownVersions,
+			CurrentTimezone: timezones.Current(),
+			CommonTimezones: hue.CommonTimezones,
 		})
 	})
 
@@ -157,6 +161,23 @@ func NewHandler(reg *registry.Registry, win *hue.PairingWindow, versions *hue.Ve
 		}
 		if err := versions.Set(v); err != nil {
 			http.Error(w, "not a recognized version: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		redirectHome(w, r)
+	})
+
+	mux.HandleFunc("POST /timezone", func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			http.Error(w, "invalid form", http.StatusBadRequest)
+			return
+		}
+		tz := r.FormValue("timezone")
+		if tz == "" {
+			http.Error(w, "timezone is required", http.StatusBadRequest)
+			return
+		}
+		if err := timezones.Set(tz); err != nil {
+			http.Error(w, "not a recognized timezone: "+err.Error(), http.StatusBadRequest)
 			return
 		}
 		redirectHome(w, r)

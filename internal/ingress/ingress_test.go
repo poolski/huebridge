@@ -15,7 +15,8 @@ func TestIngress_AddEntityRegistersIt(t *testing.T) {
 	reg, _ := registry.NewRegistry(filepath.Join(t.TempDir(), "registry.json"))
 	win := &hue.PairingWindow{}
 	versions := hue.NewVersionStore(filepath.Join(t.TempDir(), "version.json"))
-	h := NewHandler(reg, win, versions, func() []string { return []string{"light.kitchen", "light.hall"} })
+	timezones := hue.NewTimezoneStore(filepath.Join(t.TempDir(), "timezone.json"))
+	h := NewHandler(reg, win, versions, timezones, func() []string { return []string{"light.kitchen", "light.hall"} })
 
 	form := url.Values{"entity_id": {"light.kitchen"}, "name": {"Kitchen"}}
 	req := httptest.NewRequest("POST", "/entities", strings.NewReader(form.Encode()))
@@ -36,7 +37,8 @@ func TestIngress_DeleteEntityRemovesIt(t *testing.T) {
 	reg, _ := registry.NewRegistry(filepath.Join(t.TempDir(), "registry.json"))
 	reg.Add("light.kitchen", "Kitchen")
 	versions := hue.NewVersionStore(filepath.Join(t.TempDir(), "version.json"))
-	h := NewHandler(reg, &hue.PairingWindow{}, versions, func() []string { return nil })
+	timezones := hue.NewTimezoneStore(filepath.Join(t.TempDir(), "timezone.json"))
+	h := NewHandler(reg, &hue.PairingWindow{}, versions, timezones, func() []string { return nil })
 
 	req := httptest.NewRequest("POST", "/entities/light.kitchen/delete", nil)
 	rec := httptest.NewRecorder()
@@ -54,7 +56,8 @@ func TestIngress_AllowPairingOpensWindow(t *testing.T) {
 	reg, _ := registry.NewRegistry(filepath.Join(t.TempDir(), "registry.json"))
 	win := &hue.PairingWindow{}
 	versions := hue.NewVersionStore(filepath.Join(t.TempDir(), "version.json"))
-	h := NewHandler(reg, win, versions, func() []string { return nil })
+	timezones := hue.NewTimezoneStore(filepath.Join(t.TempDir(), "timezone.json"))
+	h := NewHandler(reg, win, versions, timezones, func() []string { return nil })
 
 	req := httptest.NewRequest("POST", "/pairing/allow", nil)
 	rec := httptest.NewRecorder()
@@ -70,7 +73,8 @@ func TestIngress_IndexListsRegisteredEntities(t *testing.T) {
 	reg.Add("light.kitchen", "Kitchen")
 	win := &hue.PairingWindow{}
 	versions := hue.NewVersionStore(filepath.Join(t.TempDir(), "version.json"))
-	h := NewHandler(reg, win, versions, func() []string { return nil })
+	timezones := hue.NewTimezoneStore(filepath.Join(t.TempDir(), "timezone.json"))
+	h := NewHandler(reg, win, versions, timezones, func() []string { return nil })
 
 	req := httptest.NewRequest("GET", "/", nil)
 	rec := httptest.NewRecorder()
@@ -86,7 +90,8 @@ func TestIngress_CreateGroupRegistersIt(t *testing.T) {
 	reg.Add("light.kitchen", "Kitchen")
 	reg.Add("light.hall", "Hall")
 	versions := hue.NewVersionStore(filepath.Join(t.TempDir(), "version.json"))
-	h := NewHandler(reg, &hue.PairingWindow{}, versions, func() []string { return nil })
+	timezones := hue.NewTimezoneStore(filepath.Join(t.TempDir(), "timezone.json"))
+	h := NewHandler(reg, &hue.PairingWindow{}, versions, timezones, func() []string { return nil })
 
 	form := url.Values{
 		"name":      {"Downstairs"},
@@ -114,7 +119,8 @@ func TestIngress_CreateGroupRegistersIt(t *testing.T) {
 func TestIngress_CreateGroupRequiresMembers(t *testing.T) {
 	reg, _ := registry.NewRegistry(filepath.Join(t.TempDir(), "registry.json"))
 	versions := hue.NewVersionStore(filepath.Join(t.TempDir(), "version.json"))
-	h := NewHandler(reg, &hue.PairingWindow{}, versions, func() []string { return nil })
+	timezones := hue.NewTimezoneStore(filepath.Join(t.TempDir(), "timezone.json"))
+	h := NewHandler(reg, &hue.PairingWindow{}, versions, timezones, func() []string { return nil })
 
 	form := url.Values{"name": {"Empty"}}
 	req := httptest.NewRequest("POST", "/groups", strings.NewReader(form.Encode()))
@@ -132,7 +138,8 @@ func TestIngress_IndexListsGroups(t *testing.T) {
 	reg.Add("light.kitchen", "Kitchen")
 	reg.AddGroup("Downstairs", "Living room", []string{"light.kitchen"})
 	versions := hue.NewVersionStore(filepath.Join(t.TempDir(), "version.json"))
-	h := NewHandler(reg, &hue.PairingWindow{}, versions, func() []string { return nil })
+	timezones := hue.NewTimezoneStore(filepath.Join(t.TempDir(), "timezone.json"))
+	h := NewHandler(reg, &hue.PairingWindow{}, versions, timezones, func() []string { return nil })
 
 	req := httptest.NewRequest("GET", "/", nil)
 	rec := httptest.NewRecorder()
@@ -147,7 +154,8 @@ func TestIngress_IndexListsGroups(t *testing.T) {
 func TestIngress_RedirectRespectsIngressPathPrefix(t *testing.T) {
 	reg, _ := registry.NewRegistry(filepath.Join(t.TempDir(), "registry.json"))
 	versions := hue.NewVersionStore(filepath.Join(t.TempDir(), "version.json"))
-	h := NewHandler(reg, &hue.PairingWindow{}, versions, func() []string { return nil })
+	timezones := hue.NewTimezoneStore(filepath.Join(t.TempDir(), "timezone.json"))
+	h := NewHandler(reg, &hue.PairingWindow{}, versions, timezones, func() []string { return nil })
 
 	req := httptest.NewRequest("POST", "/pairing/allow", nil)
 	req.Header.Set("X-Ingress-Path", "/api/hassio_ingress/abc123")
@@ -162,7 +170,8 @@ func TestIngress_RedirectRespectsIngressPathPrefix(t *testing.T) {
 func TestIngress_RedirectFallsBackToRootWithoutHeader(t *testing.T) {
 	reg, _ := registry.NewRegistry(filepath.Join(t.TempDir(), "registry.json"))
 	versions := hue.NewVersionStore(filepath.Join(t.TempDir(), "version.json"))
-	h := NewHandler(reg, &hue.PairingWindow{}, versions, func() []string { return nil })
+	timezones := hue.NewTimezoneStore(filepath.Join(t.TempDir(), "timezone.json"))
+	h := NewHandler(reg, &hue.PairingWindow{}, versions, timezones, func() []string { return nil })
 
 	req := httptest.NewRequest("POST", "/pairing/allow", nil)
 	rec := httptest.NewRecorder()
@@ -176,7 +185,8 @@ func TestIngress_RedirectFallsBackToRootWithoutHeader(t *testing.T) {
 func TestIngress_SetVersionAppliesAKnownVersion(t *testing.T) {
 	reg, _ := registry.NewRegistry(filepath.Join(t.TempDir(), "registry.json"))
 	versions := hue.NewVersionStore(filepath.Join(t.TempDir(), "version.json"))
-	h := NewHandler(reg, &hue.PairingWindow{}, versions, func() []string { return nil })
+	timezones := hue.NewTimezoneStore(filepath.Join(t.TempDir(), "timezone.json"))
+	h := NewHandler(reg, &hue.PairingWindow{}, versions, timezones, func() []string { return nil })
 
 	want := hue.KnownVersions[0]
 	form := url.Values{"version": {want.DatastoreVersion + "|" + want.SwVersion + "|" + want.APIVersion}}
@@ -196,7 +206,8 @@ func TestIngress_SetVersionAppliesAKnownVersion(t *testing.T) {
 func TestIngress_SetVersionRejectsUnknownVersion(t *testing.T) {
 	reg, _ := registry.NewRegistry(filepath.Join(t.TempDir(), "registry.json"))
 	versions := hue.NewVersionStore(filepath.Join(t.TempDir(), "version.json"))
-	h := NewHandler(reg, &hue.PairingWindow{}, versions, func() []string { return nil })
+	timezones := hue.NewTimezoneStore(filepath.Join(t.TempDir(), "timezone.json"))
+	h := NewHandler(reg, &hue.PairingWindow{}, versions, timezones, func() []string { return nil })
 
 	before := versions.Current()
 	form := url.Values{"version": {"1|not-a-real-build|9.9.9"}}
@@ -210,5 +221,46 @@ func TestIngress_SetVersionRejectsUnknownVersion(t *testing.T) {
 	}
 	if got := versions.Current(); got != before {
 		t.Fatalf("a rejected version change must not alter the reported version: got %+v, want %+v", got, before)
+	}
+}
+
+func TestIngress_SetTimezoneAppliesARecognizedTimezone(t *testing.T) {
+	reg, _ := registry.NewRegistry(filepath.Join(t.TempDir(), "registry.json"))
+	versions := hue.NewVersionStore(filepath.Join(t.TempDir(), "version.json"))
+	timezones := hue.NewTimezoneStore(filepath.Join(t.TempDir(), "timezone.json"))
+	h := NewHandler(reg, &hue.PairingWindow{}, versions, timezones, func() []string { return nil })
+
+	form := url.Values{"timezone": {"America/New_York"}}
+	req := httptest.NewRequest("POST", "/timezone", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != 303 {
+		t.Fatalf("got status %d, want 303 (redirect back to the picker)", rec.Code)
+	}
+	if got := timezones.Current(); got != "America/New_York" {
+		t.Fatalf("got current timezone %q, want America/New_York", got)
+	}
+}
+
+func TestIngress_SetTimezoneRejectsUnrecognizedTimezone(t *testing.T) {
+	reg, _ := registry.NewRegistry(filepath.Join(t.TempDir(), "registry.json"))
+	versions := hue.NewVersionStore(filepath.Join(t.TempDir(), "version.json"))
+	timezones := hue.NewTimezoneStore(filepath.Join(t.TempDir(), "timezone.json"))
+	h := NewHandler(reg, &hue.PairingWindow{}, versions, timezones, func() []string { return nil })
+
+	before := timezones.Current()
+	form := url.Values{"timezone": {"Not/A_Real_Zone"}}
+	req := httptest.NewRequest("POST", "/timezone", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != 400 {
+		t.Fatalf("got status %d, want 400 for an unrecognized timezone", rec.Code)
+	}
+	if got := timezones.Current(); got != before {
+		t.Fatalf("a rejected timezone change must not alter the reported timezone: got %q, want %q", got, before)
 	}
 }

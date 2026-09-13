@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"sync"
+	"time"
 
 	"huebridge/internal/store"
 )
@@ -120,45 +121,160 @@ func SetVersionOverrides(datastoreVersion, swVersion, apiVersion string) {
 	}
 }
 
+// currentTimezone is the IANA zone name reported as "timezone" in
+// GET /api/{username}/config and used to compute "localtime". Real bridges
+// pick this up from the network at setup time; huebridge has no equivalent
+// signal, so it defaults to Europe/London and is overridable via
+// SetTimezoneOverride.
+var (
+	timezoneMu      sync.RWMutex
+	currentTimezone = "Europe/London"
+)
+
+// currentTZ returns the timezone currently reported by GET
+// /api/{username}/config.
+func currentTZ() string {
+	timezoneMu.RLock()
+	defer timezoneMu.RUnlock()
+	return currentTimezone
+}
+
+// SetTimezoneOverride replaces the timezone reported by GET
+// /api/{username}/config. Empty tz leaves the default in place. Meant to be
+// called at most once, at startup, before the server accepts connections —
+// like SetVersionOverrides, mutating it after that point is a data race.
+// tz isn't validated against the IANA database here; handleGetConfig falls
+// back to UTC for "localtime" if it turns out not to be loadable, while
+// still reporting the configured string as "timezone".
+func SetTimezoneOverride(tz string) {
+	if tz == "" {
+		return
+	}
+	timezoneMu.Lock()
+	defer timezoneMu.Unlock()
+	currentTimezone = tz
+}
+
 func handleGetConfig(bridgeID string, mac net.HardwareAddr, win *PairingWindow, wl *Whitelist) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		v := currentVersion()
-		cfg := BridgeConfig{
-			Name:             "huebridge",
-			DatastoreVersion: v.DatastoreVersion,
-			SwVersion:        v.SwVersion,
-			APIVersion:       v.APIVersion,
-			Mac:              mac.String(),
-			BridgeID:         bridgeID,
-			FactoryNew:       false,
-			ModelID:          "BSB002",
-			ZigbeeChannel:    25,
-			LinkButton:       win.IsOpen(),
-		}
 
 		// GET /api/config has no {username} at all, and an unrecognized
 		// {username} must fall back to the same stripped response — only a
-		// recognized user gets the whitelist. Without it, some clients
-		// (e.g. Hue Essentials) can't confirm their new username was
-		// actually registered after POST /api succeeds, conclude pairing
-		// failed, and restart the whole flow from scratch in a loop.
+		// recognized user gets the full config (network details, portal/
+		// backup state, and whitelist). Without this, some clients (e.g.
+		// Hue Essentials) can't confirm their new username was actually
+		// registered after POST /api succeeds, conclude pairing failed, and
+		// restart the whole flow from scratch in a loop.
+		var recognized bool
 		if username := r.PathValue("username"); username != "" {
-			if _, ok := wl.Lookup(username); ok {
-				cfg.Whitelist = make(map[string]ConfigWhitelistEntry)
-				for u, entry := range wl.All() {
-					createDate := entry.CreateDate.UTC().Format("2006-01-02T15:04:05")
-					cfg.Whitelist[u] = ConfigWhitelistEntry{
-						Name:        entry.Name,
-						CreateDate:  createDate,
-						LastUseDate: createDate,
-					}
-				}
-			}
+			_, recognized = wl.Lookup(username)
 		}
 
 		w.Header().Set("Content-Type", "application/json")
+
+		if !recognized {
+			json.NewEncoder(w).Encode(strippedBridgeConfig{
+				Name:             "huebridge",
+				DatastoreVersion: v.DatastoreVersion,
+				SwVersion:        v.SwVersion,
+				APIVersion:       v.APIVersion,
+				Mac:              mac.String(),
+				BridgeID:         bridgeID,
+				FactoryNew:       false,
+				ModelID:          "BSB002",
+			})
+			return
+		}
+
+		ip, netmask, gateway := localNetworkConfig()
+		nowUTC := time.Now().UTC()
+		tz := currentTZ()
+		loc, err := time.LoadLocation(tz)
+		if err != nil {
+			loc = time.UTC
+		}
+		utc := nowUTC.Format("2006-01-02T15:04:05")
+		localtime := nowUTC.In(loc).Format("2006-01-02T15:04:05")
+
+		cfg := BridgeConfig{
+			Name:             "huebridge",
+			ZigbeeChannel:    25,
+			BridgeID:         bridgeID,
+			Mac:              mac.String(),
+			Dhcp:             true,
+			IPAddress:        ip,
+			Netmask:          netmask,
+			Gateway:          gateway,
+			ProxyAddress:     "none",
+			ProxyPort:        0,
+			UTC:              utc,
+			LocalTime:        localtime,
+			Timezone:         tz,
+			ModelID:          "BSB002",
+			DatastoreVersion: v.DatastoreVersion,
+			SwVersion:        v.SwVersion,
+			APIVersion:       v.APIVersion,
+			SwUpdate2: ConfigSwUpdate2{
+				CheckForUpdate: false,
+				LastChange:     utc,
+				Bridge:         ConfigSwUpdate2Bridge{State: "noupdates", LastInstall: utc},
+				State:          "noupdates",
+				AutoInstall:    ConfigSwUpdate2AutoInstall{UpdateTime: "T04:00:00", On: true},
+			},
+			LinkButton:       win.IsOpen(),
+			PortalServices:   false,
+			AnalyticsConsent: false,
+			PortalConnection: "disconnected",
+			PortalState: ConfigPortalState{
+				Communication: "disconnected",
+			},
+			InternetServices: ConfigInternetServices{
+				Internet:     "disconnected",
+				RemoteAccess: "disconnected",
+				Time:         "disconnected",
+				SwUpdate:     "disconnected",
+			},
+			FactoryNew:   false,
+			StarterKitID: "",
+			Backup:       ConfigBackup{Status: "idle", ErrorCode: 0},
+			HTTPBlocked:  false,
+			Whitelist:    make(map[string]ConfigWhitelistEntry),
+		}
+		for u, entry := range wl.All() {
+			createDate := entry.CreateDate.UTC().Format("2006-01-02T15:04:05")
+			cfg.Whitelist[u] = ConfigWhitelistEntry{
+				Name:        entry.Name,
+				CreateDate:  createDate,
+				LastUseDate: createDate,
+			}
+		}
+
 		json.NewEncoder(w).Encode(cfg)
 	}
+}
+
+// localNetworkConfig reports the local IP address huebridge is reachable on
+// (matching cmd/huebridge/main.go's resolveLocalIP approach — dialing out
+// without sending data to learn which interface the OS would route through),
+// a conventional /24 netmask, and a gateway guessed as that subnet's .1
+// address. huebridge doesn't actually control DHCP/networking, so these are
+// best-effort values for display, not authoritative network state.
+func localNetworkConfig() (ip, netmask, gateway string) {
+	const fallbackIP = "0.0.0.0"
+	conn, err := net.Dial("udp", "8.8.8.8:80")
+	if err != nil {
+		return fallbackIP, "255.255.255.0", fallbackIP
+	}
+	defer conn.Close()
+	localIP := conn.LocalAddr().(*net.UDPAddr).IP.To4()
+	if localIP == nil {
+		return fallbackIP, "255.255.255.0", fallbackIP
+	}
+	gw := make(net.IP, len(localIP))
+	copy(gw, localIP)
+	gw[3] = 1
+	return localIP.String(), "255.255.255.0", gw.String()
 }
 
 // versionFile is the on-disk shape of a VersionStore, persisted alongside
@@ -214,5 +330,97 @@ func (s *VersionStore) Set(v VersionTriple) error {
 		return fmt.Errorf("save version selection: %w", err)
 	}
 	setCurrentVersion(v)
+	return nil
+}
+
+// CommonTimezones are offered as suggestions in the admin UI's timezone
+// picker — a starting point, not an exhaustive list; any IANA zone name
+// time.LoadLocation accepts is a valid TimezoneStore.Set argument.
+var CommonTimezones = []string{
+	"Europe/London",
+	"Europe/Dublin",
+	"Europe/Paris",
+	"Europe/Berlin",
+	"Europe/Madrid",
+	"Europe/Rome",
+	"Europe/Amsterdam",
+	"Europe/Lisbon",
+	"Europe/Athens",
+	"Europe/Moscow",
+	"America/New_York",
+	"America/Chicago",
+	"America/Denver",
+	"America/Los_Angeles",
+	"America/Sao_Paulo",
+	"America/Toronto",
+	"Asia/Tokyo",
+	"Asia/Shanghai",
+	"Asia/Hong_Kong",
+	"Asia/Singapore",
+	"Asia/Kolkata",
+	"Asia/Dubai",
+	"Australia/Sydney",
+	"Australia/Melbourne",
+	"Pacific/Auckland",
+	"UTC",
+}
+
+// timezoneFile is the on-disk shape of a TimezoneStore, persisted alongside
+// the registry/whitelist/scenes/schedules/version JSON files so an
+// admin-selected timezone survives a restart.
+type timezoneFile struct {
+	Timezone string `json:"timezone"`
+}
+
+// TimezoneStore persists an admin-selected IANA timezone name and applies it
+// as the "timezone" (and, via handleGetConfig's "localtime" computation)
+// reported by GET /api/{username}/config. An unset persisted file leaves
+// the compiled-in Europe/London default untouched.
+type TimezoneStore struct {
+	mu   sync.Mutex
+	file *store.JSONFile[timezoneFile]
+}
+
+// NewTimezoneStore builds a TimezoneStore backed by the JSON file at path.
+func NewTimezoneStore(path string) *TimezoneStore {
+	return &TimezoneStore{file: store.NewJSONFile[timezoneFile](path)}
+}
+
+// Load applies a previously-persisted timezone selection, if any. Call once
+// at startup, before SetTimezoneOverride so an explicit env var override
+// still wins.
+func (s *TimezoneStore) Load() error {
+	state, err := s.file.Load(timezoneFile{})
+	if err != nil {
+		return err
+	}
+	if state.Timezone != "" {
+		timezoneMu.Lock()
+		currentTimezone = state.Timezone
+		timezoneMu.Unlock()
+	}
+	return nil
+}
+
+// Current returns the timezone currently reported by GET
+// /api/{username}/config.
+func (s *TimezoneStore) Current() string {
+	return currentTZ()
+}
+
+// Set validates tz as a loadable IANA zone name, persists it, and makes it
+// the timezone reported by GET /api/{username}/config from this point on.
+func (s *TimezoneStore) Set(tz string) error {
+	if _, err := time.LoadLocation(tz); err != nil {
+		return fmt.Errorf("not a recognized IANA timezone: %w", err)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.file.Save(timezoneFile{Timezone: tz}); err != nil {
+		return fmt.Errorf("save timezone selection: %w", err)
+	}
+	timezoneMu.Lock()
+	currentTimezone = tz
+	timezoneMu.Unlock()
 	return nil
 }

@@ -216,6 +216,19 @@ var indexTemplate = template.Must(template.New("index").Parse(`
 		</section>
 
 		<section>
+			<h2>Timezone</h2>
+			<p class="hint">Reported to the Hue app as "timezone" via GET /api/{username}/config, and used to compute "localtime". Any IANA zone name is accepted.</p>
+			<p>Current: <strong>{{.CurrentTimezone}}</strong></p>
+			<form method="POST" action="timezone">
+				<input type="text" name="timezone" list="common-timezones" value="{{.CurrentTimezone}}" placeholder="Europe/London" required>
+				<datalist id="common-timezones">
+					{{range .CommonTimezones}}<option value="{{.}}">{{end}}
+				</datalist>
+				<button type="submit">Set timezone</button>
+			</form>
+		</section>
+
+		<section>
 			<h2>Groups</h2>
 			{{if .Groups}}
 			<ul class="plain">

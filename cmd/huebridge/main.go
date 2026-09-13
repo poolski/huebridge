@@ -250,6 +250,17 @@ func runBridge(deps bridgeDeps) {
 		os.Getenv("HUEBRIDGE_APIVERSION"),
 	)
 
+	// The "timezone"/"localtime" fields in GET /api/{username}/config default
+	// to Europe/London — huebridge has no network-derived signal for this
+	// like a real bridge would. Settable from the admin UI (see
+	// TimezoneStore); an explicit env var still wins for this run, applied
+	// after the persisted admin selection, matching the version trio above.
+	timezones := hue.NewTimezoneStore(filepath.Join(deps.dataDir, "timezone.json"))
+	if err := timezones.Load(); err != nil {
+		log.Printf("load persisted timezone selection: %v", err)
+	}
+	hue.SetTimezoneOverride(os.Getenv("HUEBRIDGE_TIMEZONE"))
+
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
@@ -277,7 +288,7 @@ func runBridge(deps bridgeDeps) {
 	})
 	go runTicker(ctx, ticker)
 
-	ingressHandler := ingress.NewHandler(reg, pairingWindow, versions, func() []string {
+	ingressHandler := ingress.NewHandler(reg, pairingWindow, versions, timezones, func() []string {
 		listCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 		defer cancel()
 		entities, err := be.ListEntities(listCtx)
