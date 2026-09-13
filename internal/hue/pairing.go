@@ -72,6 +72,17 @@ func (wl *Whitelist) Lookup(username string) (WhitelistEntry, bool) {
 	return e, ok
 }
 
+// All returns a copy of every whitelisted entry, keyed by username.
+func (wl *Whitelist) All() map[string]WhitelistEntry {
+	wl.mu.Lock()
+	defer wl.mu.Unlock()
+	entries := make(map[string]WhitelistEntry, len(wl.state.Entries))
+	for username, entry := range wl.state.Entries {
+		entries[username] = entry
+	}
+	return entries
+}
+
 func randomHex(n int) string {
 	b := make([]byte, n)
 	rand.Read(b)

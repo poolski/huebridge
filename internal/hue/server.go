@@ -52,8 +52,8 @@ func NewServer(reg *registry.Registry, be backend.Backend, wl *Whitelist, win *P
 	// docs/superpowers/specs/hue-clip-v1-api-reference.md, "Config"). The
 	// payload we serve is already that stripped subset — no whitelist, no
 	// network details.
-	mux.HandleFunc("GET /api/config", handleGetConfig(bridgeID, mac, win))
-	mux.HandleFunc("GET /api/{username}/config", handleGetConfig(bridgeID, mac, win))
+	mux.HandleFunc("GET /api/config", handleGetConfig(bridgeID, mac, win, wl))
+	mux.HandleFunc("GET /api/{username}/config", handleGetConfig(bridgeID, mac, win, wl))
 
 	if reg != nil && be != nil {
 		handle("GET /api/{username}/lights", handleGetLights(reg, be))

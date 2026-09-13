@@ -43,16 +43,29 @@ type Group struct {
 }
 
 type BridgeConfig struct {
-	Name             string `json:"name"`
-	DatastoreVersion string `json:"datastoreversion"`
-	SwVersion        string `json:"swversion"`
-	APIVersion       string `json:"apiversion"`
-	Mac              string `json:"mac"`
-	BridgeID         string `json:"bridgeid"`
-	FactoryNew       bool   `json:"factorynew"`
-	ModelID          string `json:"modelid"`
-	ZigbeeChannel    int    `json:"zigbeechannel"`
-	LinkButton       bool   `json:"linkbutton"`
+	Name             string                          `json:"name"`
+	DatastoreVersion string                          `json:"datastoreversion"`
+	SwVersion        string                          `json:"swversion"`
+	APIVersion       string                          `json:"apiversion"`
+	Mac              string                          `json:"mac"`
+	BridgeID         string                          `json:"bridgeid"`
+	FactoryNew       bool                            `json:"factorynew"`
+	ModelID          string                          `json:"modelid"`
+	ZigbeeChannel    int                             `json:"zigbeechannel"`
+	LinkButton       bool                            `json:"linkbutton"`
+	Whitelist        map[string]ConfigWhitelistEntry `json:"whitelist,omitempty"`
+}
+
+// ConfigWhitelistEntry is how a real bridge reports each paired app in
+// GET /api/{username}/config's "whitelist" map. Some clients (e.g. Hue
+// Essentials) check that their own username appears here to confirm
+// pairing actually completed; the JSON keys have literal spaces, matching
+// the real bridge's wire format (see
+// docs/superpowers/specs/hue-clip-v1-api-reference.md, "Config").
+type ConfigWhitelistEntry struct {
+	Name        string `json:"name"`
+	CreateDate  string `json:"create date"`
+	LastUseDate string `json:"last use date"`
 }
 
 type SceneLightState struct {
