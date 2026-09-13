@@ -21,9 +21,17 @@ const configTimeFormat = "2006-01-02T15:04:05"
 // (https://diyhue.discourse.group/t/app-requires-update-of-hue-bridge-update-fails/233) —
 // their maintainer-confirmed fix was this specific matched real firmware
 // pair, not an arbitrary old placeholder.
+//
+// DEBUG (throwaway, see docs/superpowers/notes/2026-09-13-tls-pairing-failure-log.md):
+// currentSwVersion is temporarily pinned to 1955082050 — the exact build
+// Hue's developer docs cite as when CLIP v2 became the production API for
+// all Signify apps — to test whether crossing that threshold changes the
+// app's TLS/connection behavior, independent of apiversion (left at the
+// known-good 1.49.0 on purpose, so this is the only variable that moved).
+// Revert to 1949203030 once the spike concludes.
 const (
 	currentDatastoreVersion = "126"
-	currentSwVersion        = "1949203030"
+	currentSwVersion        = "1955082050"
 	currentAPIVersion       = "1.49.0"
 )
 
