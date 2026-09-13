@@ -38,9 +38,16 @@ func GenerateCertificate(bridgeID string) (tls.Certificate, error) {
 		return tls.Certificate{}, fmt.Errorf("generate key: %w", err)
 	}
 
-	serial, err := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
-	if err != nil {
-		return tls.Certificate{}, fmt.Errorf("generate serial: %w", err)
+	// The official Hue app verifies the certificate's serial number against
+	// the bridge id it discovered via mDNS/SSDP — diyHue's own setup docs
+	// call this out explicitly ("the official Hue app verifies the cert
+	// against the interface MAC"). A random serial passes ordinary X.509
+	// validation (TLS handshakes and third-party apps don't care), but the
+	// official app silently distrusts the bridge and never starts polling
+	// for the link-button press.
+	serial, ok := new(big.Int).SetString(bridgeID, 16)
+	if !ok {
+		return tls.Certificate{}, fmt.Errorf("parse bridgeID %q as hex for the certificate serial", bridgeID)
 	}
 
 	template := x509.Certificate{
