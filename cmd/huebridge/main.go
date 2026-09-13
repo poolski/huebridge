@@ -273,9 +273,9 @@ func runBridge(deps bridgeDeps) {
 	bridgeMux.Handle("/ingress/", deps.wrapAdmin(http.StripPrefix("/ingress", ingressHandler)))
 	bridgeMux.Handle("/", mux)
 
-	cert, err := bridgetls.GenerateCertificate(bridgeID)
+	cert, err := bridgetls.LoadOrGenerateCertificate(filepath.Join(deps.dataDir, "cert.pem"), bridgeID)
 	if err != nil {
-		log.Fatalf("generate certificate: %v", err)
+		log.Fatalf("load or generate certificate: %v", err)
 	}
 
 	bridgeServer := &http.Server{

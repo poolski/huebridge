@@ -4,6 +4,7 @@
 package bridgetls
 
 import (
+	"bytes"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -11,9 +12,11 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/hex"
+	"encoding/pem"
 	"fmt"
 	"math/big"
 	"net"
+	"os"
 	"strings"
 	"time"
 )
@@ -63,4 +66,74 @@ func GenerateCertificate(bridgeID string) (tls.Certificate, error) {
 		Certificate: [][]byte{der},
 		PrivateKey:  priv,
 	}, nil
+}
+
+// LoadOrGenerateCertificate returns the certificate persisted at path, or
+// generates one for bridgeID and persists it there if none exists yet.
+// Real bridges (and diyHue/Bifrost) keep a stable certificate across
+// restarts; generating fresh key material every time the process starts
+// makes the bridge look like a different device to any client that
+// remembers what it saw on a previous connection.
+func LoadOrGenerateCertificate(path, bridgeID string) (tls.Certificate, error) {
+	if cert, err := loadCertificate(path); err == nil {
+		return cert, nil
+	}
+
+	cert, err := GenerateCertificate(bridgeID)
+	if err != nil {
+		return tls.Certificate{}, err
+	}
+	if err := saveCertificate(path, cert); err != nil {
+		return tls.Certificate{}, fmt.Errorf("persist certificate to %s: %w", path, err)
+	}
+	return cert, nil
+}
+
+// loadCertificate reads a certificate+key pair written by saveCertificate.
+func loadCertificate(path string) (tls.Certificate, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return tls.Certificate{}, err
+	}
+
+	var certPEM, keyPEM []byte
+	rest := data
+	for {
+		var block *pem.Block
+		block, rest = pem.Decode(rest)
+		if block == nil {
+			break
+		}
+		switch block.Type {
+		case "CERTIFICATE":
+			certPEM = append(certPEM, pem.EncodeToMemory(block)...)
+		case "PRIVATE KEY":
+			keyPEM = pem.EncodeToMemory(block)
+		}
+	}
+	if certPEM == nil || keyPEM == nil {
+		return tls.Certificate{}, fmt.Errorf("%s does not contain both a certificate and a private key", path)
+	}
+	return tls.X509KeyPair(certPEM, keyPEM)
+}
+
+// saveCertificate writes cert as a PEM-encoded certificate followed by its
+// PKCS#8 private key, readable only by the owner since the key is
+// sensitive.
+func saveCertificate(path string, cert tls.Certificate) error {
+	keyDER, err := x509.MarshalPKCS8PrivateKey(cert.PrivateKey)
+	if err != nil {
+		return fmt.Errorf("marshal private key: %w", err)
+	}
+
+	var buf bytes.Buffer
+	for _, der := range cert.Certificate {
+		if err := pem.Encode(&buf, &pem.Block{Type: "CERTIFICATE", Bytes: der}); err != nil {
+			return err
+		}
+	}
+	if err := pem.Encode(&buf, &pem.Block{Type: "PRIVATE KEY", Bytes: keyDER}); err != nil {
+		return err
+	}
+	return os.WriteFile(path, buf.Bytes(), 0o600)
 }
