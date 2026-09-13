@@ -290,16 +290,38 @@ func runBridge(deps bridgeDeps) {
 		log.Fatalf("load or generate certificate: %v", err)
 	}
 
-	bridgeServer := &http.Server{
-		Addr:    fmt.Sprintf(":%d", deps.bridgePort),
-		Handler: bridgeMux,
+	bridgeTLSConfig := &tls.Config{
+		Certificates: []tls.Certificate{cert},
 		// A real Hue bridge's firmware only ever speaks HTTP/1.1; net/http
 		// auto-negotiates h2 over TLS otherwise, which the official app's
 		// TLS stack has been observed aborting the handshake over.
-		TLSConfig: &tls.Config{
-			Certificates: []tls.Certificate{cert},
-			NextProtos:   []string{"http/1.1"},
-		},
+		NextProtos: []string{"http/1.1"},
+	}
+	// DEBUG (throwaway, see docs/superpowers/specs — TLS-abort spike): when
+	// HUEBRIDGE_TLS_KEYLOG is set, dump the per-connection TLS secrets so a
+	// concurrent tcpdump capture of the bridge port can be decrypted in
+	// Wireshark afterwards, letting us see the exact alert/record the
+	// official app sends when a handshake aborts instead of guessing from
+	// the bare "handshake error" net/http logs. Revert before merging.
+	if keylogPath := os.Getenv("HUEBRIDGE_TLS_KEYLOG"); keylogPath != "" {
+		keylogFile, err := os.OpenFile(keylogPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+		if err != nil {
+			log.Fatalf("open TLS keylog file %s: %v", keylogPath, err)
+		}
+		defer keylogFile.Close()
+		bridgeTLSConfig.KeyLogWriter = keylogFile
+		log.Printf("DEBUG: TLS keylog enabled at %s", keylogPath)
+	}
+
+	bridgeServer := &http.Server{
+		Addr:    fmt.Sprintf(":%d", deps.bridgePort),
+		Handler: bridgeMux,
+		// DEBUG (throwaway): net/http already logs handshake failures
+		// ("http: TLS handshake error from <addr>: <reason>") to whatever
+		// ErrorLog is set — this just makes sure that lands in the same
+		// place as everything else instead of os.Stderr's default.
+		ErrorLog:  log.Default(),
+		TLSConfig: bridgeTLSConfig,
 	}
 	adminServer := &http.Server{
 		Addr:    fmt.Sprintf(":%d", deps.adminPort),

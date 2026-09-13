@@ -7,11 +7,16 @@
 #   HUEBRIDGE_REF        Git ref to build (default: main)
 #   HUEBRIDGE_LOG_LEVEL  Log level the installed service runs with (default: info; set to
 #                        "debug" to log request/response bodies and headers while troubleshooting)
+#   HUEBRIDGE_TLS_KEYLOG DEBUG (throwaway, TLS-abort spike): if set, path the running
+#                        service writes per-connection TLS secrets to, so a concurrent
+#                        tcpdump capture of the bridge port can be decrypted in Wireshark
+#                        afterwards. Unset by default. Revert before merging.
 set -euo pipefail
 
 HUEBRIDGE_REPO="${HUEBRIDGE_REPO:-https://github.com/poolski/huebridge.git}"
 HUEBRIDGE_REF="${HUEBRIDGE_REF:-main}"
 HUEBRIDGE_LOG_LEVEL="${HUEBRIDGE_LOG_LEVEL:-info}"
+HUEBRIDGE_TLS_KEYLOG="${HUEBRIDGE_TLS_KEYLOG:-}"
 
 YW="\033[33m"
 GN="\033[1;92m"
@@ -81,6 +86,10 @@ RestartSec=5
 [Install]
 WantedBy=multi-user.target
 UNIT
+
+if [ -n "$HUEBRIDGE_TLS_KEYLOG" ]; then
+	sed -i "/^\[Install\]/i Environment=HUEBRIDGE_TLS_KEYLOG=$HUEBRIDGE_TLS_KEYLOG" /etc/systemd/system/huebridge.service
+fi
 
 msg_info "Starting huebridge"
 systemctl daemon-reload
