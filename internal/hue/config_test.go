@@ -27,8 +27,8 @@ func TestConfig_GetAuthenticated(t *testing.T) {
 	if cfg.Mac != "aa:bb:cc:dd:ee:ff" {
 		t.Fatalf("got Mac=%q, want aa:bb:cc:dd:ee:ff", cfg.Mac)
 	}
-	if cfg.APIVersion != "1.61.0" {
-		t.Fatalf("got APIVersion=%q, want 1.61.0", cfg.APIVersion)
+	if cfg.APIVersion != currentAPIVersion {
+		t.Fatalf("got APIVersion=%q, want %q", cfg.APIVersion, currentAPIVersion)
 	}
 	if cfg.Whitelist != nil {
 		t.Fatalf("got Whitelist=%v for an unrecognized user, want nil", cfg.Whitelist)
@@ -62,6 +62,28 @@ func TestConfig_GetAuthenticated_IncludesWhitelistForPairedUser(t *testing.T) {
 	}
 	if entry.Name != "Hue#iPhone" {
 		t.Fatalf("got whitelist entry name=%q, want Hue#iPhone", entry.Name)
+	}
+}
+
+// TestSetVersionOverrides guards the "unset env var leaves the default
+// untouched" behavior the official Hue app's update-nag bug depends on: see
+// docs/superpowers/notes/2026-09-13-tls-pairing-failure-log.md.
+func TestSetVersionOverrides(t *testing.T) {
+	origDatastore, origSw, origAPI := currentDatastoreVersion, currentSwVersion, currentAPIVersion
+	t.Cleanup(func() {
+		currentDatastoreVersion, currentSwVersion, currentAPIVersion = origDatastore, origSw, origAPI
+	})
+
+	SetVersionOverrides("", "", "")
+	if currentDatastoreVersion != origDatastore || currentSwVersion != origSw || currentAPIVersion != origAPI {
+		t.Fatalf("empty overrides changed defaults: got (%q, %q, %q), want (%q, %q, %q)",
+			currentDatastoreVersion, currentSwVersion, currentAPIVersion, origDatastore, origSw, origAPI)
+	}
+
+	SetVersionOverrides("197", "1978293000", "1.78.0")
+	if currentDatastoreVersion != "197" || currentSwVersion != "1978293000" || currentAPIVersion != "1.78.0" {
+		t.Fatalf("got (%q, %q, %q), want (\"197\", \"1978293000\", \"1.78.0\")",
+			currentDatastoreVersion, currentSwVersion, currentAPIVersion)
 	}
 }
 

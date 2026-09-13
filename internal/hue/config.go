@@ -6,13 +6,45 @@ import (
 	"net/http"
 )
 
+// currentDatastoreVersion/currentSwVersion/currentAPIVersion: the official
+// Hue app validates this triple against a real released firmware
+// combination and, if it doesn't recognize it, nags for an update that a
+// non-genuine bridge can never actually deliver — see
+// docs/superpowers/notes/2026-09-13-tls-pairing-failure-log.md for the full
+// investigation. The defaults below are a real, currently-live bridge's
+// reported triple (queried directly). Overridable at runtime via
+// SetVersionOverrides so a stale default doesn't need a rebuild to fix as
+// Signify ships new firmware.
+var (
+	currentDatastoreVersion = "197"
+	currentSwVersion        = "1978293000"
+	currentAPIVersion       = "1.78.0"
+)
+
+// SetVersionOverrides replaces currentDatastoreVersion/currentSwVersion/
+// currentAPIVersion with any non-empty argument, leaving the corresponding
+// default in place otherwise. Meant to be called at most once, at startup,
+// before the server accepts connections — these three aren't behind a
+// mutex, so mutating them after that point is a data race.
+func SetVersionOverrides(datastoreVersion, swVersion, apiVersion string) {
+	if datastoreVersion != "" {
+		currentDatastoreVersion = datastoreVersion
+	}
+	if swVersion != "" {
+		currentSwVersion = swVersion
+	}
+	if apiVersion != "" {
+		currentAPIVersion = apiVersion
+	}
+}
+
 func handleGetConfig(bridgeID string, mac net.HardwareAddr, win *PairingWindow, wl *Whitelist) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		cfg := BridgeConfig{
 			Name:             "huebridge",
-			DatastoreVersion: "126",
-			SwVersion:        "1000000000",
-			APIVersion:       "1.61.0",
+			DatastoreVersion: currentDatastoreVersion,
+			SwVersion:        currentSwVersion,
+			APIVersion:       currentAPIVersion,
 			Mac:              mac.String(),
 			BridgeID:         bridgeID,
 			FactoryNew:       false,
