@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"sync"
 	"time"
 )
 
@@ -15,45 +16,80 @@ import (
 // docs/superpowers/specs/hue-clip-v1-api-reference.md, "Config".
 const configTimeFormat = "2006-01-02T15:04:05"
 
-// currentDatastoreVersion/currentSwVersion/currentAPIVersion: the diyHue
-// community hit this exact "official app demands an update, update never
-// completes" problem years ago
-// (https://diyhue.discourse.group/t/app-requires-update-of-hue-bridge-update-fails/233) —
-// their maintainer-confirmed fix was this specific matched real firmware
-// pair, not an arbitrary old placeholder. Overridable at runtime via
-// SetVersionOverrides (see docs/superpowers/notes/2026-09-13-tls-pairing-failure-log.md
-// for why: this trio has taken more rebuild-and-redeploy cycles to pin down
-// than anything else on this branch) — don't change these defaults without
-// reading that log first.
+// currentDatastoreVersion/currentSwVersion/currentAPIVersion default to the
+// diyHue community's maintainer-confirmed fallback pair
+// (https://diyhue.discourse.group/t/app-requires-update-of-hue-bridge-update-fails/233,
+// see also docs/superpowers/notes/2026-09-13-tls-pairing-failure-log.md) —
+// used until VersionUpdater's background fetch from Signify (or
+// SetVersionOverrides) replaces swVersion/apiVersion with a currently valid
+// pair. versionMu guards all three: VersionUpdater writes swVersion/
+// apiVersion from a background goroutine while request handlers read them
+// concurrently.
 var (
+	versionMu               sync.RWMutex
 	currentDatastoreVersion = "126"
 	currentSwVersion        = "1949203030"
 	currentAPIVersion       = "1.49.0"
+
+	// swVersionOverridden/apiVersionOverridden record whether
+	// SetVersionOverrides pinned a field, so VersionUpdater's background
+	// fetches (setDiscoveredVersion) never silently clobber an explicit
+	// override.
+	swVersionOverridden  bool
+	apiVersionOverridden bool
 )
 
 // SetVersionOverrides replaces currentDatastoreVersion/currentSwVersion/
 // currentAPIVersion with any non-empty argument, leaving the corresponding
-// default in place otherwise. Meant to be called at most once, at startup,
-// before the server accepts connections — these three aren't behind a
-// mutex, so mutating them after that point is a data race.
+// default (or a later VersionUpdater fetch, for datastoreVersion only) in
+// place otherwise. An overridden swVersion/apiVersion is pinned: it's
+// exempt from VersionUpdater's background updates from here on.
 func SetVersionOverrides(datastoreVersion, swVersion, apiVersion string) {
+	versionMu.Lock()
+	defer versionMu.Unlock()
 	if datastoreVersion != "" {
 		currentDatastoreVersion = datastoreVersion
 	}
 	if swVersion != "" {
 		currentSwVersion = swVersion
+		swVersionOverridden = true
 	}
 	if apiVersion != "" {
+		currentAPIVersion = apiVersion
+		apiVersionOverridden = true
+	}
+}
+
+// setDiscoveredVersion applies a swVersion/apiVersion pair VersionUpdater
+// fetched from Signify, skipping any field SetVersionOverrides pinned.
+func setDiscoveredVersion(swVersion, apiVersion string) {
+	versionMu.Lock()
+	defer versionMu.Unlock()
+	if !swVersionOverridden {
+		currentSwVersion = swVersion
+	}
+	if !apiVersionOverridden {
 		currentAPIVersion = apiVersion
 	}
 }
 
 // APIVersion returns the currently reported apiversion, reflecting any
-// SetVersionOverrides call — used by discovery.StartSSDP so its SERVER
-// header agrees with the CLIP API instead of carrying an independent,
-// driftable version string.
+// SetVersionOverrides call or VersionUpdater fetch — used by
+// discovery.StartSSDP so its SERVER header agrees with the CLIP API instead
+// of carrying an independent, driftable version string.
 func APIVersion() string {
+	versionMu.RLock()
+	defer versionMu.RUnlock()
 	return currentAPIVersion
+}
+
+// currentVersions returns a consistent snapshot of the datastore/software/
+// API versions for the config handlers to serve, guarding against a
+// concurrent SetVersionOverrides call or VersionUpdater fetch.
+func currentVersions() (datastoreVersion, swVersion, apiVersion string) {
+	versionMu.RLock()
+	defer versionMu.RUnlock()
+	return currentDatastoreVersion, currentSwVersion, currentAPIVersion
 }
 
 // lastInstallDate is computed once at process start, not per-request — a
@@ -86,11 +122,12 @@ func noUpdatesAvailable() (SwUpdate, SwUpdate2) {
 // before pairing, e.g. via "Manual bridge setup" in the Hue app.
 func handleGetPublicConfig(bridgeID string, mac net.HardwareAddr) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		datastoreVersion, swVersion, apiVersion := currentVersions()
 		cfg := PublicBridgeConfig{
 			Name:             "huebridge",
-			DatastoreVersion: currentDatastoreVersion,
-			SwVersion:        currentSwVersion,
-			APIVersion:       currentAPIVersion,
+			DatastoreVersion: datastoreVersion,
+			SwVersion:        swVersion,
+			APIVersion:       apiVersion,
 			Mac:              mac.String(),
 			BridgeID:         bridgeID,
 			FactoryNew:       false,
@@ -133,11 +170,12 @@ func handleGetConfig(bridgeID string, mac net.HardwareAddr, win *PairingWindow, 
 
 		swUpdate, swUpdate2 := noUpdatesAvailable()
 		now := time.Now()
+		datastoreVersion, swVersion, apiVersion := currentVersions()
 		cfg := BridgeConfig{
 			Name:             "huebridge",
-			DatastoreVersion: currentDatastoreVersion,
-			SwVersion:        currentSwVersion,
-			APIVersion:       currentAPIVersion,
+			DatastoreVersion: datastoreVersion,
+			SwVersion:        swVersion,
+			APIVersion:       apiVersion,
 			Mac:              mac.String(),
 			BridgeID:         bridgeID,
 			FactoryNew:       false,
@@ -178,6 +216,11 @@ const updaterCapturePath = "/tmp/huebridge-updater-capture.bin"
 // TEMPORARY: also captures the raw request body to updaterCapturePath so
 // its firmware-container format can be inspected. Remove this capture
 // once that's done — it's not something a normal install should carry.
+//
+// It also forces VersionUpdater to recheck Signify immediately rather than
+// waiting out its cache, matching Bifrost's post_updater: this route is
+// exactly what the official app hits for a user-triggered "check for
+// update", so it's the moment a live answer matters most.
 func handleUpdater() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if f, err := os.Create(updaterCapturePath); err != nil {
@@ -191,6 +234,7 @@ func handleUpdater() http.HandlerFunc {
 				log.Printf("captured /updater body: %d bytes to %s (Content-Type: %s)", n, updaterCapturePath, r.Header.Get("Content-Type"))
 			}
 		}
+		refreshVersionNow()
 		w.WriteHeader(http.StatusOK)
 	}
 }

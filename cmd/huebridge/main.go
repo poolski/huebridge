@@ -248,6 +248,13 @@ func runBridge(deps bridgeDeps) {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
+	// Replaces the hardcoded swversion/apiversion fallback with whatever
+	// pair Signify's own firmware-update-check endpoint currently reports,
+	// same as Bifrost's VersionUpdater — see internal/hue/version_updater.go.
+	// A no-op for any field HUEBRIDGE_SWVERSION/HUEBRIDGE_APIVERSION already
+	// pinned above.
+	hue.StartVersionUpdater(ctx, nil)
+
 	// The Hue app polls /lights about once a second; the cache turns those
 	// polls into reads of a WebSocket-fed snapshot instead of a REST call
 	// per entity per poll.
