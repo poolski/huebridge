@@ -50,6 +50,10 @@ type VersionTriple struct {
 //     swversions match Signify's Jun 28 2018 and Oct 3 2018 releases.
 //   - 94/1940042020/1.40.0: reported in openhue-cli issue #88; swversion
 //     matches Signify's Aug 3 2020 release.
+//   - 126/1000000000/1.61.0: the pre-existing hardcoded default (see the
+//     currentDatastoreVersion/currentSwVersion/currentAPIVersion comment
+//     above) — unlike the other entries, not cross-checked against a real
+//     bridge capture or Signify's release notes.
 //   - 165/1961135030/1.61.0: homebridge-hue's ph-Tutorial wiki page;
 //     swversion matches Signify's Dec 7 2023 release.
 //   - 197/1978293000/1.79.0: swversion matches Signify's most recent
@@ -61,6 +65,7 @@ var KnownVersions = []VersionTriple{
 	{DatastoreVersion: "70", SwVersion: "1806051111", APIVersion: "1.24.0"},
 	{DatastoreVersion: "70", SwVersion: "1809121051", APIVersion: "1.24.0"},
 	{DatastoreVersion: "94", SwVersion: "1940042020", APIVersion: "1.40.0"},
+	{DatastoreVersion: "126", SwVersion: "1000000000", APIVersion: "1.61.0"},
 	{DatastoreVersion: "165", SwVersion: "1961135030", APIVersion: "1.61.0"},
 	{DatastoreVersion: "197", SwVersion: "1978293000", APIVersion: "1.79.0"},
 }
