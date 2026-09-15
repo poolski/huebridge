@@ -89,11 +89,15 @@ func randomHex(n int) string {
 	return hex.EncodeToString(b)
 }
 
+// PairingRequest is POST /api's request body — a real bridge only reads
+// devicetype from it too, ignoring any other fields.
+type PairingRequest struct {
+	DeviceType string `json:"devicetype"`
+}
+
 func handlePairing(wl *Whitelist, win *PairingWindow) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		var req struct {
-			DeviceType string `json:"devicetype"`
-		}
+		var req PairingRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || strings.TrimSpace(req.DeviceType) == "" {
 			WriteError(w, http.StatusOK, 6, "/api/devicetype", "parameter, devicetype, not available")
 			return

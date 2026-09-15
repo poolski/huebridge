@@ -31,6 +31,43 @@ type indexData struct {
 	CommonTimezones []string
 }
 
+// These types exist solely to give apidoc's reflection-based schema
+// generation something to read — the handlers below still parse their
+// bodies with r.ParseForm/r.FormValue, not json.Decode, since the admin UI
+// posts regular HTML forms. Each type's fields and json tags must be kept in
+// sync with the FormValue calls the corresponding handler actually makes.
+
+// addEntityRequest is POST /entities's form body.
+type addEntityRequest struct {
+	EntityID string `json:"entity_id"`
+	Name     string `json:"name"`
+}
+
+// addGroupRequest is POST /groups's form body.
+type addGroupRequest struct {
+	Name      string   `json:"name"`
+	EntityIDs []string `json:"entity_id"`
+	Class     string   `json:"class,omitempty"`
+}
+
+// setVersionRequest is POST /version's form body — Version is the
+// "datastore|sw|api" encoding versionOptionValue produces.
+type setVersionRequest struct {
+	Version string `json:"version"`
+}
+
+// setDebugVersionRequest is POST /debug/version's form body.
+type setDebugVersionRequest struct {
+	DatastoreVersion string `json:"datastoreversion"`
+	SwVersion        string `json:"swversion"`
+	APIVersion       string `json:"apiversion"`
+}
+
+// setTimezoneRequest is POST /timezone's form body.
+type setTimezoneRequest struct {
+	Timezone string `json:"timezone"`
+}
+
 // versionOptionValue encodes v as a single <option value> so the three
 // fields survive a form round-trip together, never mixed with another
 // triple's field.
@@ -63,8 +100,8 @@ func redirectHome(w http.ResponseWriter, r *http.Request) {
 func NewHandler(reg *registry.Registry, win *hue.PairingWindow, versions *hue.VersionStore, timezones *hue.TimezoneStore, availableEntities func() []string) http.Handler {
 	mux := http.NewServeMux()
 
-	register := func(group, pattern string, h http.HandlerFunc) {
-		mux.HandleFunc(pattern, apidoc.Register(group, pattern, h))
+	register := func(group, pattern string, h http.HandlerFunc, opts ...apidoc.SchemaOption) {
+		mux.HandleFunc(pattern, apidoc.Register(group, pattern, h, opts...))
 	}
 
 	register("admin", "GET /", func(w http.ResponseWriter, r *http.Request) {
@@ -114,7 +151,7 @@ func NewHandler(reg *registry.Registry, win *hue.PairingWindow, versions *hue.Ve
 			return
 		}
 		redirectHome(w, r)
-	})
+	}, apidoc.FormEncoded, apidoc.Request(addEntityRequest{}))
 
 	register("admin", "POST /entities/{id}/delete", func(w http.ResponseWriter, r *http.Request) {
 		if err := reg.Remove(r.PathValue("id")); err != nil {
@@ -148,7 +185,7 @@ func NewHandler(reg *registry.Registry, win *hue.PairingWindow, versions *hue.Ve
 			return
 		}
 		redirectHome(w, r)
-	})
+	}, apidoc.FormEncoded, apidoc.Request(addGroupRequest{}))
 
 	register("admin", "POST /pairing/allow", func(w http.ResponseWriter, r *http.Request) {
 		win.Open(30 * time.Second)
@@ -170,7 +207,7 @@ func NewHandler(reg *registry.Registry, win *hue.PairingWindow, versions *hue.Ve
 			return
 		}
 		redirectHome(w, r)
-	})
+	}, apidoc.FormEncoded, apidoc.Request(setVersionRequest{}))
 
 	// POST /debug/version accepts an arbitrary datastore/software/API version
 	// triple, unlike POST /version above which only allows KnownVersions —
@@ -192,7 +229,7 @@ func NewHandler(reg *registry.Registry, win *hue.PairingWindow, versions *hue.Ve
 		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(v)
-	})
+	}, apidoc.FormEncoded, apidoc.Request(setDebugVersionRequest{}), apidoc.Response(hue.VersionTriple{}))
 
 	register("admin", "POST /timezone", func(w http.ResponseWriter, r *http.Request) {
 		if err := r.ParseForm(); err != nil {
@@ -209,12 +246,13 @@ func NewHandler(reg *registry.Registry, win *hue.PairingWindow, versions *hue.Ve
 			return
 		}
 		redirectHome(w, r)
-	})
+	}, apidoc.FormEncoded, apidoc.Request(setTimezoneRequest{}))
 
 	// GET /debug/routes describes every route registered across all of
 	// huebridge's servers (this admin mux and the CLIP v1 mux built by
-	// hue.NewServer) as a JSON:API document — see internal/apidoc. Register
-	// it last so its own entry is included in the snapshot it serves.
+	// hue.NewServer) as an OpenAPI 3.0 document, payload schemas included —
+	// see internal/apidoc. Register it last so its own entry is included in
+	// the snapshot it serves.
 	register("debug", "GET /debug/routes", apidoc.Handler)
 
 	return mux

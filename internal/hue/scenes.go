@@ -133,12 +133,16 @@ func handleGetScene(scenes *SceneStore) http.HandlerFunc {
 	}
 }
 
+// CreateSceneRequest is POST /api/{username}/scenes's request body. Group
+// identifies which registry group to snapshot the current light states of.
+type CreateSceneRequest struct {
+	Name  string `json:"name"`
+	Group string `json:"group"`
+}
+
 func handlePostScene(reg *registry.Registry, be backend.Backend, scenes *SceneStore) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		var req struct {
-			Name  string `json:"name"`
-			Group string `json:"group"`
-		}
+		var req CreateSceneRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			WriteError(w, http.StatusOK, 2, r.URL.Path, "body contains invalid JSON")
 			return

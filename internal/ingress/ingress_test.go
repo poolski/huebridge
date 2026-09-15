@@ -325,45 +325,47 @@ func TestIngress_DebugRoutesListsRegisteredRoutes(t *testing.T) {
 	if rec.Code != 200 {
 		t.Fatalf("got status %d, want 200", rec.Code)
 	}
-	if ct := rec.Header().Get("Content-Type"); ct != "application/vnd.api+json" {
-		t.Fatalf("got Content-Type %q, want application/vnd.api+json", ct)
+	if ct := rec.Header().Get("Content-Type"); ct != "application/json" {
+		t.Fatalf("got Content-Type %q, want application/json", ct)
 	}
 
 	var doc struct {
-		Data []struct {
-			Type       string `json:"type"`
-			ID         string `json:"id"`
-			Attributes struct {
-				Method  string `json:"method"`
-				Path    string `json:"path"`
-				Handler string `json:"handler"`
-				Group   string `json:"group"`
-			} `json:"attributes"`
-		} `json:"data"`
+		OpenAPI string                    `json:"openapi"`
+		Paths   map[string]map[string]any `json:"paths"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &doc); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
 
-	found := map[string]string{} // id -> group
-	for _, res := range doc.Data {
-		if res.Type != "route" {
-			t.Fatalf("got resource type %q, want %q", res.Type, "route")
-		}
-		found[res.ID] = res.Attributes.Group
+	if doc.OpenAPI == "" {
+		t.Fatal("expected a non-empty openapi version field")
 	}
-	want := map[string]string{
-		"POST /entities":      "admin",
-		"POST /debug/version": "debug",
-		"GET /debug/routes":   "debug",
-	}
-	for id, group := range want {
-		got, ok := found[id]
+	for path, method := range map[string]string{
+		"/entities":      "post",
+		"/debug/version": "post",
+		"/debug/routes":  "get",
+	} {
+		ops, ok := doc.Paths[path]
 		if !ok {
-			t.Fatalf("expected /debug/routes to list %q, got %v", id, found)
+			t.Fatalf("expected /debug/routes to document path %q, got %v", path, doc.Paths)
 		}
-		if got != group {
-			t.Fatalf("got group %q for %q, want %q", got, id, group)
+		if _, ok := ops[method]; !ok {
+			t.Fatalf("expected path %q to document method %q, got %v", path, method, ops)
 		}
+	}
+
+	// POST /debug/version has a request/response schema (see
+	// apidoc.Request/apidoc.Response in NewHandler) that should show up as
+	// a component, not just a bare path entry.
+	var full struct {
+		Components struct {
+			Schemas map[string]any `json:"schemas"`
+		} `json:"components"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &full); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if _, ok := full.Components.Schemas["setDebugVersionRequest"]; !ok {
+		t.Fatalf("expected components.schemas to define setDebugVersionRequest, got %v", full.Components.Schemas)
 	}
 }

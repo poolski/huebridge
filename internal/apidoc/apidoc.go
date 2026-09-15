@@ -1,16 +1,28 @@
 // Package apidoc records the HTTP routes huebridge registers as it wires up
 // its servers, so a single endpoint can describe the whole API surface (CLIP
-// v1 plus the admin/debug routes) without a hand-maintained list that drifts
-// out of sync with server.go/ingress.go as routes are added or removed.
+// v1 plus the admin/debug routes) — including request/response payload
+// shapes — without a hand-maintained description that drifts out of sync
+// with server.go/ingress.go as routes are added or removed.
 //
 // Each route-registering call is wrapped with Register, which uses
 // reflection (runtime.FuncForPC) to read the handler function's own name off
-// the compiled binary rather than requiring a separately-typed description —
-// that's what keeps the inventory dynamic as the code changes.
+// the compiled binary rather than requiring a separately-typed description.
+// Callers may additionally pass Request/Response options naming the Go type
+// a handler decodes/encodes; the payload schema is then derived from that
+// type's fields via reflection (encoding/json struct tags included), so a
+// field added to e.g. hue.Light automatically shows up here too. Handlers
+// that decode into an untyped map (huebridge does this for the Hue light/
+// group "state"/"action" bodies, which are genuinely dynamic key sets) have
+// no such type to reflect on and are simply left without a request schema —
+// inventing one would claim more precision than the code actually has.
+//
+// The inventory is served as an OpenAPI 3.0 document (see OpenAPIDocument),
+// the spec meant for describing HTTP paths and payload shapes — unlike
+// JSON:API, which standardizes response envelopes for an API's own
+// resources and has no vocabulary for describing other endpoints' schemas.
 package apidoc
 
 import (
-	"encoding/json"
 	"net/http"
 	"reflect"
 	"runtime"
@@ -34,7 +46,40 @@ type Route struct {
 	// Group labels which server the route belongs to (e.g. "clip",
 	// "admin", "debug"), since huebridge runs more than one mux.
 	Group string
+	// Request/Response are the Go types (if any) a handler decodes/
+	// encodes, supplied via the Request/Response options to Register.
+	// Multiple entries mean the handler can produce/accept more than one
+	// shape (e.g. GET /api/config's response depends on whether the
+	// caller is a recognized user) and are rendered as an OpenAPI oneOf.
+	Request  []reflect.Type
+	Response []reflect.Type
+	// RequestContentType is the request body's wire format, e.g.
+	// "application/x-www-form-urlencoded" for the admin UI's HTML forms.
+	// Empty (the common case) means "application/json".
+	RequestContentType string
 }
+
+// SchemaOption attaches request/response type information to a Route at
+// Register time.
+type SchemaOption func(*Route)
+
+// Request records v's type as (one of) the route's request body shape.
+func Request(v any) SchemaOption {
+	t := reflect.TypeOf(v)
+	return func(r *Route) { r.Request = append(r.Request, t) }
+}
+
+// Response records v's type as (one of) the route's response body shape.
+func Response(v any) SchemaOption {
+	t := reflect.TypeOf(v)
+	return func(r *Route) { r.Response = append(r.Response, t) }
+}
+
+// FormEncoded marks the route's request body as
+// "application/x-www-form-urlencoded" (an HTML form post) rather than the
+// default "application/json" — used by the admin UI's routes, none of which
+// speak JSON in requests.
+func FormEncoded(r *Route) { r.RequestContentType = "application/x-www-form-urlencoded" }
 
 var (
 	mu     sync.Mutex
@@ -46,7 +91,11 @@ var (
 // route registration can be wrapped in place:
 //
 //	mux.HandleFunc(pattern, apidoc.Register("clip", pattern, handler))
-func Register(group, pattern string, h http.HandlerFunc) http.HandlerFunc {
+//
+// Pass Request/Response to additionally describe the payload shape(s), e.g.
+//
+//	apidoc.Register("clip", pattern, handler, apidoc.Response(hue.Light{}))
+func Register(group, pattern string, h http.HandlerFunc, opts ...SchemaOption) http.HandlerFunc {
 	method, path, hasMethod := strings.Cut(pattern, " ")
 	if !hasMethod {
 		method, path = "", pattern
@@ -57,9 +106,14 @@ func Register(group, pattern string, h http.HandlerFunc) http.HandlerFunc {
 		name = name[i+1:] // drop the module path, keep "package.func"
 	}
 
+	rt := Route{Method: method, Path: path, Handler: name, Group: group}
+	for _, opt := range opts {
+		opt(&rt)
+	}
+
 	mu.Lock()
 	defer mu.Unlock()
-	routes = append(routes, Route{Method: method, Path: path, Handler: name, Group: group})
+	routes = append(routes, rt)
 	return h
 }
 
@@ -79,49 +133,10 @@ func All() []Route {
 	return out
 }
 
-// resource is a JSON:API (https://jsonapi.org) resource object describing
-// one route.
-type resource struct {
-	Type       string     `json:"type"`
-	ID         string     `json:"id"`
-	Attributes attributes `json:"attributes"`
-}
-
-type attributes struct {
-	Method  string `json:"method,omitempty"`
-	Path    string `json:"path"`
-	Handler string `json:"handler"`
-	Group   string `json:"group"`
-}
-
-// document is the top-level JSON:API envelope.
-type document struct {
-	Data []resource `json:"data"`
-}
-
-// Handler serves every registered route as a JSON:API document. Register it
-// after every other route in the process has been set up, so its own
-// snapshot is complete.
+// Handler serves every registered route as an OpenAPI 3.0 document (see
+// OpenAPIDocument). Register it after every other route in the process has
+// been set up, so its own snapshot is complete.
 func Handler(w http.ResponseWriter, r *http.Request) {
-	rs := All()
-	data := make([]resource, len(rs))
-	for i, rt := range rs {
-		id := rt.Path
-		if rt.Method != "" {
-			id = rt.Method + " " + rt.Path
-		}
-		data[i] = resource{
-			Type: "route",
-			ID:   id,
-			Attributes: attributes{
-				Method:  rt.Method,
-				Path:    rt.Path,
-				Handler: rt.Handler,
-				Group:   rt.Group,
-			},
-		}
-	}
-
-	w.Header().Set("Content-Type", "application/vnd.api+json")
-	json.NewEncoder(w).Encode(document{Data: data})
+	w.Header().Set("Content-Type", "application/json")
+	writeJSON(w, OpenAPIDocument("huebridge", "1.0.0"))
 }

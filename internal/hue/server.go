@@ -31,8 +31,8 @@ func requireUser(wl *Whitelist, next http.HandlerFunc) http.HandlerFunc {
 func NewServer(reg *registry.Registry, be backend.Backend, wl *Whitelist, win *PairingWindow, bridgeID string, mac net.HardwareAddr, scenes *SceneStore, schedules *ScheduleStore) *http.ServeMux {
 	mux := http.NewServeMux()
 
-	register := func(pattern string, h http.HandlerFunc) {
-		mux.HandleFunc(pattern, apidoc.Register("clip", pattern, h))
+	register := func(pattern string, h http.HandlerFunc, opts ...apidoc.SchemaOption) {
+		mux.HandleFunc(pattern, apidoc.Register("clip", pattern, h, opts...))
 	}
 
 	// POST /api is the pairing endpoint: it has no username yet, so it is
@@ -40,14 +40,14 @@ func NewServer(reg *registry.Registry, be backend.Backend, wl *Whitelist, win *P
 	// treats /api and /api/ as different patterns, but real clients aren't
 	// consistent about the trailing slash (Hue Essentials always sends
 	// one), so both need to resolve here.
-	register("POST /api", handlePairing(wl, win))
-	register("POST /api/", handlePairing(wl, win))
+	register("POST /api", handlePairing(wl, win), apidoc.Request(PairingRequest{}), apidoc.Response([]SuccessItem{}))
+	register("POST /api/", handlePairing(wl, win), apidoc.Request(PairingRequest{}), apidoc.Response([]SuccessItem{}))
 
-	handle := func(pattern string, h http.HandlerFunc) {
+	handle := func(pattern string, h http.HandlerFunc, opts ...apidoc.SchemaOption) {
 		// Recorded under the real handler (h), not the requireUser
 		// wrapper every authenticated route shares — reflection on the
 		// wrapper would just report "requireUser.func1" for all of them.
-		apidoc.Register("clip", pattern, h)
+		apidoc.Register("clip", pattern, h, opts...)
 		mux.HandleFunc(pattern, requireUser(wl, h))
 	}
 
@@ -61,26 +61,28 @@ func NewServer(reg *registry.Registry, be backend.Backend, wl *Whitelist, win *P
 	// docs/superpowers/specs/hue-clip-v1-api-reference.md, "Config"). The
 	// payload we serve is already that stripped subset — no whitelist, no
 	// network details.
-	register("GET /api/config", handleGetConfig(bridgeID, mac, win, wl))
-	register("GET /api/{username}/config", handleGetConfig(bridgeID, mac, win, wl))
+	configSchema := apidoc.Response(strippedBridgeConfig{})
+	authedConfigSchema := apidoc.Response(BridgeConfig{})
+	register("GET /api/config", handleGetConfig(bridgeID, mac, win, wl), configSchema)
+	register("GET /api/{username}/config", handleGetConfig(bridgeID, mac, win, wl), configSchema, authedConfigSchema)
 
 	if reg != nil && be != nil {
-		handle("GET /api/{username}/lights", handleGetLights(reg, be))
-		handle("GET /api/{username}/lights/{id}", handleGetLight(reg, be))
-		handle("PUT /api/{username}/lights/{id}/state", handlePutLightState(reg, be))
-		handle("GET /api/{username}/groups", handleGetGroups(reg, be))
-		handle("GET /api/{username}/groups/{id}", handleGetGroup(reg, be))
-		handle("PUT /api/{username}/groups/{id}/action", handlePutGroupAction(reg, be))
+		handle("GET /api/{username}/lights", handleGetLights(reg, be), apidoc.Response(map[string]Light{}))
+		handle("GET /api/{username}/lights/{id}", handleGetLight(reg, be), apidoc.Response(Light{}))
+		handle("PUT /api/{username}/lights/{id}/state", handlePutLightState(reg, be), apidoc.Response([]SuccessItem{}))
+		handle("GET /api/{username}/groups", handleGetGroups(reg, be), apidoc.Response(map[string]Group{}))
+		handle("GET /api/{username}/groups/{id}", handleGetGroup(reg, be), apidoc.Response(Group{}))
+		handle("PUT /api/{username}/groups/{id}/action", handlePutGroupAction(reg, be), apidoc.Response([]SuccessItem{}))
 
-		handle("GET /api/{username}/scenes", handleGetScenes(scenes))
-		handle("GET /api/{username}/scenes/{id}", handleGetScene(scenes))
-		handle("POST /api/{username}/scenes", handlePostScene(reg, be, scenes))
-		handle("DELETE /api/{username}/scenes/{id}", handleDeleteScene(scenes, be))
+		handle("GET /api/{username}/scenes", handleGetScenes(scenes), apidoc.Response(map[string]Scene{}))
+		handle("GET /api/{username}/scenes/{id}", handleGetScene(scenes), apidoc.Response(Scene{}))
+		handle("POST /api/{username}/scenes", handlePostScene(reg, be, scenes), apidoc.Request(CreateSceneRequest{}), apidoc.Response([]SuccessItem{}))
+		handle("DELETE /api/{username}/scenes/{id}", handleDeleteScene(scenes, be), apidoc.Response([]SuccessItem{}))
 
-		handle("GET /api/{username}/schedules", handleGetSchedules(schedules))
-		handle("GET /api/{username}/schedules/{id}", handleGetSchedule(schedules))
-		handle("POST /api/{username}/schedules", handlePostSchedule(schedules))
-		handle("DELETE /api/{username}/schedules/{id}", handleDeleteSchedule(schedules))
+		handle("GET /api/{username}/schedules", handleGetSchedules(schedules), apidoc.Response(map[string]Schedule{}))
+		handle("GET /api/{username}/schedules/{id}", handleGetSchedule(schedules), apidoc.Response(Schedule{}))
+		handle("POST /api/{username}/schedules", handlePostSchedule(schedules), apidoc.Request(CreateScheduleRequest{}), apidoc.Response([]SuccessItem{}))
+		handle("DELETE /api/{username}/schedules/{id}", handleDeleteSchedule(schedules), apidoc.Response([]SuccessItem{}))
 	}
 
 	return mux

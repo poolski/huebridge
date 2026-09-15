@@ -275,13 +275,16 @@ func handleGetSchedule(schedules *ScheduleStore) http.HandlerFunc {
 	}
 }
 
+// CreateScheduleRequest is POST /api/{username}/schedules's request body.
+type CreateScheduleRequest struct {
+	Name      string          `json:"name"`
+	LocalTime string          `json:"localtime"`
+	Command   ScheduleCommand `json:"command"`
+}
+
 func handlePostSchedule(schedules *ScheduleStore) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		var req struct {
-			Name      string          `json:"name"`
-			LocalTime string          `json:"localtime"`
-			Command   ScheduleCommand `json:"command"`
-		}
+		var req CreateScheduleRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			WriteError(w, http.StatusOK, 2, r.URL.Path, "body contains invalid JSON")
 			return
