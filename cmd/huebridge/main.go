@@ -21,6 +21,7 @@ import (
 	"syscall"
 	"time"
 
+	"huebridge/internal/apidoc"
 	"huebridge/internal/backend/cache"
 	"huebridge/internal/backend/homeassistant"
 	"huebridge/internal/discovery"
@@ -280,7 +281,7 @@ func runBridge(deps bridgeDeps) {
 	mux := hue.NewServer(reg, be, whitelist, pairingWindow, bridgeID, mac, scenes, schedules)
 
 	ip := resolveLocalIP()
-	mux.HandleFunc("GET /description.xml", handleDescriptionXML(bridgeID, ip, deps.bridgePort))
+	mux.HandleFunc("GET /description.xml", apidoc.Register("clip", "GET /description.xml", handleDescriptionXML(bridgeID, ip, deps.bridgePort)))
 
 	ticker := hue.NewTicker(schedules, be, func(id int) (string, bool) {
 		e, ok := reg.ByHueID(id)

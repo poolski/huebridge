@@ -4,6 +4,7 @@ import (
 	"net"
 	"net/http"
 
+	"huebridge/internal/apidoc"
 	"huebridge/internal/backend"
 	"huebridge/internal/registry"
 )
@@ -30,15 +31,23 @@ func requireUser(wl *Whitelist, next http.HandlerFunc) http.HandlerFunc {
 func NewServer(reg *registry.Registry, be backend.Backend, wl *Whitelist, win *PairingWindow, bridgeID string, mac net.HardwareAddr, scenes *SceneStore, schedules *ScheduleStore) *http.ServeMux {
 	mux := http.NewServeMux()
 
+	register := func(pattern string, h http.HandlerFunc) {
+		mux.HandleFunc(pattern, apidoc.Register("clip", pattern, h))
+	}
+
 	// POST /api is the pairing endpoint: it has no username yet, so it is
 	// the one route that must not sit behind requireUser. Go's ServeMux
 	// treats /api and /api/ as different patterns, but real clients aren't
 	// consistent about the trailing slash (Hue Essentials always sends
 	// one), so both need to resolve here.
-	mux.HandleFunc("POST /api", handlePairing(wl, win))
-	mux.HandleFunc("POST /api/", handlePairing(wl, win))
+	register("POST /api", handlePairing(wl, win))
+	register("POST /api/", handlePairing(wl, win))
 
 	handle := func(pattern string, h http.HandlerFunc) {
+		// Recorded under the real handler (h), not the requireUser
+		// wrapper every authenticated route shares — reflection on the
+		// wrapper would just report "requireUser.func1" for all of them.
+		apidoc.Register("clip", pattern, h)
 		mux.HandleFunc(pattern, requireUser(wl, h))
 	}
 
@@ -52,8 +61,8 @@ func NewServer(reg *registry.Registry, be backend.Backend, wl *Whitelist, win *P
 	// docs/superpowers/specs/hue-clip-v1-api-reference.md, "Config"). The
 	// payload we serve is already that stripped subset — no whitelist, no
 	// network details.
-	mux.HandleFunc("GET /api/config", handleGetConfig(bridgeID, mac, win, wl))
-	mux.HandleFunc("GET /api/{username}/config", handleGetConfig(bridgeID, mac, win, wl))
+	register("GET /api/config", handleGetConfig(bridgeID, mac, win, wl))
+	register("GET /api/{username}/config", handleGetConfig(bridgeID, mac, win, wl))
 
 	if reg != nil && be != nil {
 		handle("GET /api/{username}/lights", handleGetLights(reg, be))

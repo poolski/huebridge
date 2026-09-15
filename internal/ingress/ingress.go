@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"huebridge/internal/apidoc"
 	"huebridge/internal/hue"
 	"huebridge/internal/registry"
 )
@@ -62,7 +63,11 @@ func redirectHome(w http.ResponseWriter, r *http.Request) {
 func NewHandler(reg *registry.Registry, win *hue.PairingWindow, versions *hue.VersionStore, timezones *hue.TimezoneStore, availableEntities func() []string) http.Handler {
 	mux := http.NewServeMux()
 
-	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
+	register := func(group, pattern string, h http.HandlerFunc) {
+		mux.HandleFunc(pattern, apidoc.Register(group, pattern, h))
+	}
+
+	register("admin", "GET /", func(w http.ResponseWriter, r *http.Request) {
 		entries := reg.All()
 		names := make(map[string]string, len(entries))
 		for _, e := range entries {
@@ -93,7 +98,7 @@ func NewHandler(reg *registry.Registry, win *hue.PairingWindow, versions *hue.Ve
 		})
 	})
 
-	mux.HandleFunc("POST /entities", func(w http.ResponseWriter, r *http.Request) {
+	register("admin", "POST /entities", func(w http.ResponseWriter, r *http.Request) {
 		if err := r.ParseForm(); err != nil {
 			http.Error(w, "invalid form", http.StatusBadRequest)
 			return
@@ -111,7 +116,7 @@ func NewHandler(reg *registry.Registry, win *hue.PairingWindow, versions *hue.Ve
 		redirectHome(w, r)
 	})
 
-	mux.HandleFunc("POST /entities/{id}/delete", func(w http.ResponseWriter, r *http.Request) {
+	register("admin", "POST /entities/{id}/delete", func(w http.ResponseWriter, r *http.Request) {
 		if err := reg.Remove(r.PathValue("id")); err != nil {
 			http.Error(w, "failed to remove entity", http.StatusInternalServerError)
 			return
@@ -121,7 +126,7 @@ func NewHandler(reg *registry.Registry, win *hue.PairingWindow, versions *hue.Ve
 
 	// Groups are what scenes are created against, so without a way to make
 	// one the Hue app can never create a scene at all.
-	mux.HandleFunc("POST /groups", func(w http.ResponseWriter, r *http.Request) {
+	register("admin", "POST /groups", func(w http.ResponseWriter, r *http.Request) {
 		if err := r.ParseForm(); err != nil {
 			http.Error(w, "invalid form", http.StatusBadRequest)
 			return
@@ -145,12 +150,12 @@ func NewHandler(reg *registry.Registry, win *hue.PairingWindow, versions *hue.Ve
 		redirectHome(w, r)
 	})
 
-	mux.HandleFunc("POST /pairing/allow", func(w http.ResponseWriter, r *http.Request) {
+	register("admin", "POST /pairing/allow", func(w http.ResponseWriter, r *http.Request) {
 		win.Open(30 * time.Second)
 		redirectHome(w, r)
 	})
 
-	mux.HandleFunc("POST /version", func(w http.ResponseWriter, r *http.Request) {
+	register("admin", "POST /version", func(w http.ResponseWriter, r *http.Request) {
 		if err := r.ParseForm(); err != nil {
 			http.Error(w, "invalid form", http.StatusBadRequest)
 			return
@@ -171,7 +176,7 @@ func NewHandler(reg *registry.Registry, win *hue.PairingWindow, versions *hue.Ve
 	// triple, unlike POST /version above which only allows KnownVersions —
 	// it exists for scripting tests against combinations the admin picker
 	// deliberately won't offer.
-	mux.HandleFunc("POST /debug/version", func(w http.ResponseWriter, r *http.Request) {
+	register("debug", "POST /debug/version", func(w http.ResponseWriter, r *http.Request) {
 		if err := r.ParseForm(); err != nil {
 			http.Error(w, "invalid form", http.StatusBadRequest)
 			return
@@ -189,7 +194,7 @@ func NewHandler(reg *registry.Registry, win *hue.PairingWindow, versions *hue.Ve
 		json.NewEncoder(w).Encode(v)
 	})
 
-	mux.HandleFunc("POST /timezone", func(w http.ResponseWriter, r *http.Request) {
+	register("admin", "POST /timezone", func(w http.ResponseWriter, r *http.Request) {
 		if err := r.ParseForm(); err != nil {
 			http.Error(w, "invalid form", http.StatusBadRequest)
 			return
@@ -205,6 +210,12 @@ func NewHandler(reg *registry.Registry, win *hue.PairingWindow, versions *hue.Ve
 		}
 		redirectHome(w, r)
 	})
+
+	// GET /debug/routes describes every route registered across all of
+	// huebridge's servers (this admin mux and the CLIP v1 mux built by
+	// hue.NewServer) as a JSON:API document — see internal/apidoc. Register
+	// it last so its own entry is included in the snapshot it serves.
+	register("debug", "GET /debug/routes", apidoc.Handler)
 
 	return mux
 }

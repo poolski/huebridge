@@ -1,6 +1,7 @@
 package ingress
 
 import (
+	"encoding/json"
 	"net/http/httptest"
 	"net/url"
 	"path/filepath"
@@ -308,5 +309,61 @@ func TestIngress_SetTimezoneRejectsUnrecognizedTimezone(t *testing.T) {
 	}
 	if got := timezones.Current(); got != before {
 		t.Fatalf("a rejected timezone change must not alter the reported timezone: got %q, want %q", got, before)
+	}
+}
+
+func TestIngress_DebugRoutesListsRegisteredRoutes(t *testing.T) {
+	reg, _ := registry.NewRegistry(filepath.Join(t.TempDir(), "registry.json"))
+	versions := hue.NewVersionStore(filepath.Join(t.TempDir(), "version.json"))
+	timezones := hue.NewTimezoneStore(filepath.Join(t.TempDir(), "timezone.json"))
+	h := NewHandler(reg, &hue.PairingWindow{}, versions, timezones, func() []string { return nil })
+
+	req := httptest.NewRequest("GET", "/debug/routes", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != 200 {
+		t.Fatalf("got status %d, want 200", rec.Code)
+	}
+	if ct := rec.Header().Get("Content-Type"); ct != "application/vnd.api+json" {
+		t.Fatalf("got Content-Type %q, want application/vnd.api+json", ct)
+	}
+
+	var doc struct {
+		Data []struct {
+			Type       string `json:"type"`
+			ID         string `json:"id"`
+			Attributes struct {
+				Method  string `json:"method"`
+				Path    string `json:"path"`
+				Handler string `json:"handler"`
+				Group   string `json:"group"`
+			} `json:"attributes"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &doc); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+
+	found := map[string]string{} // id -> group
+	for _, res := range doc.Data {
+		if res.Type != "route" {
+			t.Fatalf("got resource type %q, want %q", res.Type, "route")
+		}
+		found[res.ID] = res.Attributes.Group
+	}
+	want := map[string]string{
+		"POST /entities":      "admin",
+		"POST /debug/version": "debug",
+		"GET /debug/routes":   "debug",
+	}
+	for id, group := range want {
+		got, ok := found[id]
+		if !ok {
+			t.Fatalf("expected /debug/routes to list %q, got %v", id, found)
+		}
+		if got != group {
+			t.Fatalf("got group %q for %q, want %q", got, id, group)
+		}
 	}
 }
