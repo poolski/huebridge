@@ -338,6 +338,24 @@ func (s *VersionStore) Set(v VersionTriple) error {
 	return nil
 }
 
+// SetUnchecked persists an arbitrary version triple without requiring it to
+// appear in KnownVersions. Intended for testing pairing/version-reporting
+// behavior against combinations that haven't been observed on a real
+// bridge — Set's known-good restriction exists to protect the admin UI's
+// picker, not to stop deliberate ad-hoc testing.
+func (s *VersionStore) SetUnchecked(v VersionTriple) error {
+	if v.DatastoreVersion == "" || v.SwVersion == "" || v.APIVersion == "" {
+		return fmt.Errorf("datastoreversion, swversion and apiversion are all required")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.file.Save(versionFile{Version: v}); err != nil {
+		return fmt.Errorf("save version selection: %w", err)
+	}
+	setCurrentVersion(v)
+	return nil
+}
+
 // CommonTimezones are offered as suggestions in the admin UI's timezone
 // picker — a starting point, not an exhaustive list; any IANA zone name
 // time.LoadLocation accepts is a valid TimezoneStore.Set argument.

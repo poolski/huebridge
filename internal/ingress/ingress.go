@@ -4,6 +4,7 @@
 package ingress
 
 import (
+	"encoding/json"
 	"net/http"
 	"strings"
 	"time"
@@ -164,6 +165,28 @@ func NewHandler(reg *registry.Registry, win *hue.PairingWindow, versions *hue.Ve
 			return
 		}
 		redirectHome(w, r)
+	})
+
+	// POST /debug/version accepts an arbitrary datastore/software/API version
+	// triple, unlike POST /version above which only allows KnownVersions —
+	// it exists for scripting tests against combinations the admin picker
+	// deliberately won't offer.
+	mux.HandleFunc("POST /debug/version", func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			http.Error(w, "invalid form", http.StatusBadRequest)
+			return
+		}
+		v := hue.VersionTriple{
+			DatastoreVersion: r.FormValue("datastoreversion"),
+			SwVersion:        r.FormValue("swversion"),
+			APIVersion:       r.FormValue("apiversion"),
+		}
+		if err := versions.SetUnchecked(v); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(v)
 	})
 
 	mux.HandleFunc("POST /timezone", func(w http.ResponseWriter, r *http.Request) {

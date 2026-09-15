@@ -224,6 +224,52 @@ func TestIngress_SetVersionRejectsUnknownVersion(t *testing.T) {
 	}
 }
 
+func TestIngress_DebugSetVersionAppliesAnArbitraryVersion(t *testing.T) {
+	reg, _ := registry.NewRegistry(filepath.Join(t.TempDir(), "registry.json"))
+	versions := hue.NewVersionStore(filepath.Join(t.TempDir(), "version.json"))
+	timezones := hue.NewTimezoneStore(filepath.Join(t.TempDir(), "timezone.json"))
+	h := NewHandler(reg, &hue.PairingWindow{}, versions, timezones, func() []string { return nil })
+
+	want := hue.VersionTriple{DatastoreVersion: "1", SwVersion: "not-a-real-build", APIVersion: "9.9.9"}
+	form := url.Values{
+		"datastoreversion": {want.DatastoreVersion},
+		"swversion":        {want.SwVersion},
+		"apiversion":       {want.APIVersion},
+	}
+	req := httptest.NewRequest("POST", "/debug/version", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != 200 {
+		t.Fatalf("got status %d, want 200", rec.Code)
+	}
+	if got := versions.Current(); got != want {
+		t.Fatalf("got current version %+v, want %+v", got, want)
+	}
+}
+
+func TestIngress_DebugSetVersionRejectsIncompleteInput(t *testing.T) {
+	reg, _ := registry.NewRegistry(filepath.Join(t.TempDir(), "registry.json"))
+	versions := hue.NewVersionStore(filepath.Join(t.TempDir(), "version.json"))
+	timezones := hue.NewTimezoneStore(filepath.Join(t.TempDir(), "timezone.json"))
+	h := NewHandler(reg, &hue.PairingWindow{}, versions, timezones, func() []string { return nil })
+
+	before := versions.Current()
+	form := url.Values{"datastoreversion": {"1"}, "swversion": {"1000000000"}}
+	req := httptest.NewRequest("POST", "/debug/version", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != 400 {
+		t.Fatalf("got status %d, want 400 for a missing apiversion", rec.Code)
+	}
+	if got := versions.Current(); got != before {
+		t.Fatalf("a rejected version change must not alter the reported version: got %+v, want %+v", got, before)
+	}
+}
+
 func TestIngress_SetTimezoneAppliesARecognizedTimezone(t *testing.T) {
 	reg, _ := registry.NewRegistry(filepath.Join(t.TempDir(), "registry.json"))
 	versions := hue.NewVersionStore(filepath.Join(t.TempDir(), "version.json"))

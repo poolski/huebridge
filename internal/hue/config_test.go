@@ -147,6 +147,50 @@ func TestVersionStore_SetPersistsAndAppliesAKnownVersion(t *testing.T) {
 	}
 }
 
+func TestVersionStore_SetUncheckedPersistsAnArbitraryVersion(t *testing.T) {
+	origDatastore, origSw, origAPI := currentDatastoreVersion, currentSwVersion, currentAPIVersion
+	t.Cleanup(func() {
+		currentDatastoreVersion, currentSwVersion, currentAPIVersion = origDatastore, origSw, origAPI
+	})
+
+	want := VersionTriple{DatastoreVersion: "1", SwVersion: "not-a-real-build", APIVersion: "9.9.9"}
+	path := filepath.Join(t.TempDir(), "version.json")
+	vs := NewVersionStore(path)
+	if err := vs.SetUnchecked(want); err != nil {
+		t.Fatalf("SetUnchecked: %v", err)
+	}
+	if got := vs.Current(); got != want {
+		t.Fatalf("got Current()=%+v, want %+v", got, want)
+	}
+
+	// A fresh store loading from the same file picks up the persisted
+	// selection, so it survives a restart.
+	currentDatastoreVersion, currentSwVersion, currentAPIVersion = origDatastore, origSw, origAPI
+	reloaded := NewVersionStore(path)
+	if err := reloaded.Load(); err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if got := currentVersion(); got != want {
+		t.Fatalf("after Load(), got current version %+v, want %+v", got, want)
+	}
+}
+
+func TestVersionStore_SetUncheckedRejectsIncompleteInput(t *testing.T) {
+	origDatastore, origSw, origAPI := currentDatastoreVersion, currentSwVersion, currentAPIVersion
+	t.Cleanup(func() {
+		currentDatastoreVersion, currentSwVersion, currentAPIVersion = origDatastore, origSw, origAPI
+	})
+
+	vs := NewVersionStore(filepath.Join(t.TempDir(), "version.json"))
+	err := vs.SetUnchecked(VersionTriple{DatastoreVersion: "1", SwVersion: "not-a-real-build"})
+	if err == nil {
+		t.Fatal("expected SetUnchecked to reject a version triple missing a field")
+	}
+	if currentDatastoreVersion != origDatastore || currentSwVersion != origSw || currentAPIVersion != origAPI {
+		t.Fatal("a rejected SetUnchecked must not change the currently-reported version")
+	}
+}
+
 func TestVersionStore_LoadWithoutPriorSetLeavesDefaultsUntouched(t *testing.T) {
 	origDatastore, origSw, origAPI := currentDatastoreVersion, currentSwVersion, currentAPIVersion
 	t.Cleanup(func() {
